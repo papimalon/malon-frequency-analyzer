@@ -1,0 +1,16 @@
+MALON FREQUENCY ANALYZER - macOS (VST3 + AU, universal, UNSIGNED test build)
+
+1. Unzip this file.
+2. Copy  VST3/Malon Frequency Analyzer.vst3
+   to    /Library/Audio/Plug-Ins/VST3/
+3. Copy  AU/Malon Frequency Analyzer.component
+   to    /Library/Audio/Plug-Ins/Components/
+   (Or use ~/Library/Audio/Plug-Ins/... for just your user.)
+4. Open Terminal and remove macOS's quarantine flag (the build is not signed/notarised yet):
+     xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/VST3/Malon Frequency Analyzer.vst3"
+     xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/Components/Malon Frequency Analyzer.component"
+   If macOS still blocks it: System Settings > Privacy & Security > "Open Anyway".
+5. FL Studio: Options > Manage plugins > Find installed plugins. Look for "Malon Frequency Analyzer".
+
+Open the plugin's Meters button (or press M) for true-peak, RMS and LUFS.
+Source and license: AGPL-3.0, see LICENSE, THIRD_PARTY_NOTICES.md.
