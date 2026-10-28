@@ -5,6 +5,7 @@
 #include "ui/MalonLookAndFeel.h"
 #include "ui/SpectrumView.h"
 #include "ui/SettingsPanel.h"
+#include "ui/MeterStrip.h"
 
 namespace malon
 {
@@ -44,11 +45,15 @@ public:
     void setFrozen (bool f);
     void applyAllSettings();
     void scrollSettingsTo (int y) { viewport.setViewPosition (0, y); }
+    MeterStrip& getMeterStrip() noexcept { return strip; }
+    bool isMeterVisible() const noexcept { return strip.isVisible(); }
 
 private:
     void timerCallback() override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void resetAll();
+    void resetMeters();
+    void updateMeterVisibility();
 
     MalonProcessor& proc;
     MalonLookAndFeel laf;
@@ -59,6 +64,10 @@ private:
     SettingsContent content;
     juce::Viewport viewport;
     juce::TextButton freezeButton { "Freeze" }, resetButton { "Reset" }, settingsButton { "Settings" }, aboutButton { "i" };
+    MeterStrip strip;
+    juce::TextButton metersButton { "Meters" };
+    std::unique_ptr<juce::ButtonParameterAttachment> metersAtt;
+    double liveDb[2] = { -200.0, -200.0 };
     AboutOverlay about;
     juce::ComponentBoundsConstrainer constrainer;
 

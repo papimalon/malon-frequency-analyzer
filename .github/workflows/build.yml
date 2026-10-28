@@ -61,12 +61,12 @@ jobs:
       - name: DSP + plugin tests (Linux uses a virtual display)
         if: runner.os == 'Linux'
         run: |
-          ctest --test-dir build -C ${{ env.BUILD_TYPE }} -R dsp --output-on-failure
+          ctest --test-dir build -C ${{ env.BUILD_TYPE }} -R "dsp|meter" --output-on-failure
           xvfb-run -a -s "-screen 0 1920x1080x24" ctest --test-dir build -C ${{ env.BUILD_TYPE }} -R plugin --output-on-failure
 
       - name: DSP tests (Windows, macOS)
         if: runner.os != 'Linux'
-        run: ctest --test-dir build -C ${{ env.BUILD_TYPE }} -R dsp --output-on-failure
+        run: ctest --test-dir build -C ${{ env.BUILD_TYPE }} -R "dsp|meter" --output-on-failure
 
       - name: Install pluginval (Windows)
         if: runner.os == 'Windows'

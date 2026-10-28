@@ -15,6 +15,8 @@ MalonProcessor::MalonProcessor()
 {
     pChannel = apvts.getRawParameterValue (ids::channel);
     pBands   = apvts.getRawParameterValue (ids::bands);
+    pMeterOn = apvts.getRawParameterValue (ids::meterOn);
+    pRmsWindow = apvts.getRawParameterValue (ids::rmsWindow);
     if (useUserDefault()) loadDefault();
 }
 
@@ -28,6 +30,8 @@ static int bpoFromIndex (int i) { static const int v[] = { 3, 4, 6 }; return v[j
 
 void MalonProcessor::prepareToPlay (double sampleRate, int)
 {
+    meter.prepare (sampleRate, jlimit (1, 2, getTotalNumInputChannels()));
+    meterWasOn = false;
     currentFs  = sampleRate;
     currentBpo = bpoFromIndex ((int) pBands->load());
     bank.prepare (sampleRate, currentBpo);
@@ -54,6 +58,18 @@ void MalonProcessor::processImpl (AudioBuffer<Sample>& buffer)
     const Sample* l = buffer.getReadPointer (0);
     const Sample* r = buffer.getReadPointer (numCh > 1 ? 1 : 0);
     bank.process (l, r, n, mode);
+
+    // pro metering: read-only as well. Off = not measured at all; switching it on starts from a clean slate.
+    if (pMeterOn->load() > 0.5f)
+    {
+        if (! meterWasOn) { meter.reset(); meterWasOn = true; }
+        meter.setRmsWindowMs (kRmsWindowsMs[jlimit (0, 3, (int) pRmsWindow->load())]);
+        meter.process (buffer.getArrayOfReadPointers(), jmin (numCh, 2), n);
+    }
+    else
+    {
+        meterWasOn = false;
+    }
 }
 
 void MalonProcessor::processBlock (AudioBuffer<float>& b, MidiBuffer&)  { processImpl (b); }
@@ -89,7 +105,7 @@ void MalonProcessor::setColors (const ColorScheme& c)
 
 Point<int> MalonProcessor::getSavedEditorSize() const
 {
-    return { (int) apvts.state.getProperty (kEdW, 760), (int) apvts.state.getProperty (kEdH, 400) };
+    return { (int) apvts.state.getProperty (kEdW, 780), (int) apvts.state.getProperty (kEdH, 480) };
 }
 void MalonProcessor::saveEditorSize (int w, int h)
 {

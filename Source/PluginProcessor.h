@@ -4,6 +4,7 @@
 #include "ColorScheme.h"
 #include "Parameters.h"
 #include "dsp/Ballistics.h"
+#include "dsp/LevelMeter.h"
 
 namespace malon
 {
@@ -39,6 +40,7 @@ public:
 
     // analysis + settings
     FilterBank& getBank() noexcept { return bank; }
+    LevelMeter& getMeter() noexcept { return meter; }
     juce::AudioProcessorValueTreeState apvts;
 
     DisplaySettings getDisplaySettings() const;
@@ -67,6 +69,10 @@ private:
     void applyStateTree (const juce::ValueTree&);
 
     FilterBank bank;
+    LevelMeter meter;
+    std::atomic<float>* pMeterOn = nullptr;
+    std::atomic<float>* pRmsWindow = nullptr;
+    bool meterWasOn = false;
     std::atomic<float>* pChannel = nullptr;
     std::atomic<float>* pBands   = nullptr;
     int  currentBpo = 0;

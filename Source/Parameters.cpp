@@ -46,6 +46,10 @@ AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     choice ("freqGrid", "Frequency Grid", { "Decade", "Octave" }, 0);
     choice ("bands", "Bands per Octave", { "3", "4", "6" }, 2);
 
+    // pro metering (true peak, RMS, loudness) - a separate, switchable section
+    toggle ("meterOn", "Meters", true);
+    choice ("rmsWindow", "RMS Window", { "100 ms", "300 ms", "1 s", "3 s" }, 1);
+
     return l;
 }
 

@@ -60,7 +60,7 @@ void AboutOverlay::mouseUp (const MouseEvent& e)
 // ---- Editor ----------------------------------------------------------------
 
 MalonEditor::MalonEditor (MalonProcessor& p)
-    : AudioProcessorEditor (&p), proc (p), content (p)
+    : AudioProcessorEditor (&p), proc (p), content (p), strip (p)
 {
     setLookAndFeel (&laf);
     view.setData (&model);
@@ -77,7 +77,12 @@ MalonEditor::MalonEditor (MalonProcessor& p)
     settingsButton.setClickingTogglesState (true);
     settingsButton.onClick = [this] { setSettingsOpen (settingsButton.getToggleState()); };
     aboutButton.onClick = [this] { showAbout (true); };
-    for (auto* b : { &freezeButton, &resetButton, &settingsButton, &aboutButton }) addAndMakeVisible (b);
+    for (auto* b : { &freezeButton, &resetButton, &settingsButton, &aboutButton, &metersButton }) addAndMakeVisible (b);
+    metersAtt = std::make_unique<ButtonParameterAttachment> (*proc.apvts.getParameter (ids::meterOn), metersButton);
+    metersButton.setClickingTogglesState (true);
+    metersButton.setTooltip ("Show the pro meters: true peak, RMS, loudness (M)");
+    addChildComponent (strip);
+    strip.onReset = [this] { resetMeters(); };
     freezeButton.setTooltip ("Freeze the display (F)");
     resetButton.setTooltip ("Clear peaks, holds and averages (R)");
 
@@ -85,7 +90,7 @@ MalonEditor::MalonEditor (MalonProcessor& p)
     about.onClose = [this] { showAbout (false); };
 
     setWantsKeyboardFocus (true);
-    constrainer.setMinimumSize (480, 260);
+    constrainer.setMinimumSize (520, 340);
     constrainer.setMaximumSize (4096, 2400);
     setConstrainer (&constrainer);
     setResizable (true, true);
@@ -123,7 +128,7 @@ void MalonEditor::paint (Graphics& g)
     g.setColour (palette::text);
     g.setFont (uiFont (16.0f, true).withExtraKerningFactor (0.16f));
     g.drawText ("MALON", r.getX() + 18, 0, 100, topBarH, Justification::centredLeft, false);
-    if (getWidth() > 560)
+    if (getWidth() > 700)
     {
         g.setColour (palette::dim);
         g.setFont (uiFont (10.5f).withExtraKerningFactor (0.14f));
@@ -142,6 +147,11 @@ void MalonEditor::resized()
     resetButton.setBounds (top.removeFromRight (70));
     top.removeFromRight (6);
     freezeButton.setBounds (top.removeFromRight (74));
+    top.removeFromRight (6);
+    metersButton.setBounds (top.removeFromRight (80));
+
+    if (strip.isVisible())
+        strip.setBounds (r.removeFromBottom (MeterStrip::preferredHeight));
 
     if (settingsOpen)
     {
@@ -187,8 +197,32 @@ void MalonEditor::resetAll()
     view.repaint();
 }
 
+void MalonEditor::resetMeters()
+{
+    proc.getMeter().requestReset();
+    double dump[2]; proc.getMeter().consumeRecentPeaks (dump);
+    liveDb[0] = liveDb[1] = -200.0;
+}
+
+void MalonEditor::updateMeterVisibility()
+{
+    const bool on = proc.apvts.getRawParameterValue (ids::meterOn)->load() > 0.5f;
+    if (on != strip.isVisible())
+    {
+        strip.setVisible (on);
+        resized();
+        repaint();
+    }
+}
+
 bool MalonEditor::keyPressed (const KeyPress& k)
 {
+    if (k.getTextCharacter() == 'm' || k.getTextCharacter() == 'M')
+    {
+        if (auto* prm = proc.apvts.getParameter (ids::meterOn))
+        { prm->beginChangeGesture(); prm->setValueNotifyingHost (strip.isVisible() ? 0.0f : 1.0f); prm->endChangeGesture(); }
+        return true;
+    }
     if (k.getTextCharacter() == 'f' || k.getTextCharacter() == 'F') { setFrozen (! model.frozen); return true; }
     if (k.getTextCharacter() == 'r' || k.getTextCharacter() == 'R') { resetAll(); return true; }
     return false;
@@ -206,6 +240,7 @@ void MalonEditor::applyAllSettings()
     s.frozen = model.frozen;
     view.setSettings (s);
     view.setColors (proc.getColors());
+    updateMeterVisibility();
 }
 
 void MalonEditor::changeListenerCallback (ChangeBroadcaster*)
@@ -220,6 +255,18 @@ void MalonEditor::pollNow (double dtMs)
     proc.getBank().read (r);         // always fills the layout; zero data when no audio arrived
     model.update (r, dtMs, proc.getDisplaySettings());
     applyAllSettings();
+
+    if (strip.isVisible())
+    {
+        double pk[2];
+        proc.getMeter().consumeRecentPeaks (pk);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            liveDb[ch] = jmax (liveDb[ch] - 24.0 * dtMs / 1000.0, -200.0);                       // 24 dB/s fall
+            if (pk[ch] > 0.0) liveDb[ch] = jmax (liveDb[ch], 20.0 * std::log10 (pk[ch]));
+        }
+        strip.setReadout (proc.getMeter().read(), liveDb[0], liveDb[1]);
+    }
 }
 
 void MalonEditor::timerCallback()

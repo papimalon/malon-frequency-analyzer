@@ -25,7 +25,12 @@ namespace ids
     inline constexpr const char* grid         = "grid";
     inline constexpr const char* freqGrid     = "freqGrid";
     inline constexpr const char* bands        = "bands";
+    inline constexpr const char* meterOn      = "meterOn";
+    inline constexpr const char* rmsWindow    = "rmsWindow";
 }
+
+/** RMS window choices (ms), index = value of the "rmsWindow" parameter. */
+inline constexpr int kRmsWindowsMs[4] = { 100, 300, 1000, 3000 };
 
 enum class ShowAs { Bars = 0, Curve = 1, CurveFill = 2 };
 

@@ -33,11 +33,14 @@ static void testPassthroughAndLayouts()
     p.prepareToPlay (48000, 512);
 
     Random rnd (7);
+    for (int meterOn : { 1, 0, 1 })
     for (int ch : { 1, 2 })
         for (int n : { 1, 7, 64, 255, 256, 257, 480, 1000, 4096 })
         {
+            setParam (p, ids::meterOn, (float) meterOn);
             AudioBuffer<float> b (ch, n), ref;
-            for (int c = 0; c < ch; ++c) for (int i = 0; i < n; ++i) b.setSample (c, i, rnd.nextFloat() * 2.0f - 1.0f);
+            // +-2.0 on purpose: over full scale must pass untouched too (the meter only reads)
+            for (int c = 0; c < ch; ++c) for (int i = 0; i < n; ++i) b.setSample (c, i, (rnd.nextFloat() * 2.0f - 1.0f) * 2.0f);
             ref.makeCopyOf (b);
             MidiBuffer m; p.processBlock (b, m);
             bool same = true;
@@ -45,7 +48,7 @@ static void testPassthroughAndLayouts()
             CHECK_MSG (same, "float %d ch %d samples altered", ch, n);
 
             AudioBuffer<double> bd (ch, n), refd;
-            for (int c = 0; c < ch; ++c) for (int i = 0; i < n; ++i) bd.setSample (c, i, rnd.nextDouble() * 2.0 - 1.0);
+            for (int c = 0; c < ch; ++c) for (int i = 0; i < n; ++i) bd.setSample (c, i, (rnd.nextDouble() * 2.0 - 1.0) * 2.0);
             refd.makeCopyOf (bd);
             p.processBlock (bd, m);
             same = true;
@@ -72,6 +75,7 @@ static void testParametersAndState()
     CHECK (getParam (a, ids::holdDecay) == 3);  CHECK (getParam (a, ids::ceiling) == 3);
     CHECK (getParam (a, ids::range) == 51);     CHECK (getParam (a, ids::grid) == 5);
     CHECK (getParam (a, ids::bands) == 2);      CHECK (getParam (a, ids::avgSize) == 3);
+    CHECK (getParam (a, ids::meterOn) == 1);    CHECK (getParam (a, ids::rmsWindow) == 1);   // meters on, 300 ms
     CHECK (getParam (a, ids::holdSize) == 2);   CHECK (getParam (a, ids::avgSlope) == 0);
     auto rng = [&] (const char* id) { return dynamic_cast<RangedAudioParameter*> (a.apvts.getParameter (id))->getNormalisableRange(); };
     CHECK (rng (ids::avgTime).start == 100 && rng (ids::avgTime).end == 20000 && rng (ids::avgTime).interval == 100);
@@ -81,6 +85,7 @@ static void testParametersAndState()
 
     setParam (a, ids::channel, 3); setParam (a, ids::avgTime, 7500); setParam (a, ids::holdShow, 2);
     setParam (a, ids::bands, 0); setParam (a, ids::avgSlope, 4); setParam (a, ids::range, 80); setParam (a, ids::holdInfinite, 1);
+    setParam (a, ids::meterOn, 0); setParam (a, ids::rmsWindow, 3);
     auto cs = builtInSchemes()[3].scheme; cs.c[2] = Colour (0x80123456);
     a.setColors (cs); a.saveEditorSize (900, 500); a.setSettingsOpen (true);
     MemoryBlock blob; a.getStateInformation (blob);
@@ -91,6 +96,7 @@ static void testParametersAndState()
     CHECK (getParam (b, ids::holdShow) == 2);    CHECK (getParam (b, ids::bands) == 0);
     CHECK (getParam (b, ids::avgSlope) == 4);    CHECK (getParam (b, ids::range) == 80);
     CHECK (getParam (b, ids::holdInfinite) == 1);
+    CHECK (getParam (b, ids::meterOn) == 0);     CHECK (getParam (b, ids::rmsWindow) == 3);
     CHECK (b.getColors().toString() == cs.toString());
     CHECK (b.getSavedEditorSize().x == 900 && b.getSavedEditorSize().y == 500 && b.getSettingsOpen());
 
@@ -141,6 +147,102 @@ static void testEndToEnd()
     }
 }
 
+static void testMeterInProcessor()
+{
+    std::printf ("[meter] 997 Hz at -20 dBFS through the real processor: loudness, RMS, true peak, mono/stereo, reset, on/off\n");
+    MalonProcessor::useUserDefault() = false;
+    auto near = [] (double a, double b, double tol) { return std::fabs (a - b) <= tol; };
+    const double fs = 48000.0;
+
+    auto feed = [&] (MalonProcessor& p, int numCh, double seconds, double amp, const std::vector<int>& blocks)
+    {
+        double ph = 0.0; size_t bi = 0; long long left = (long long) (seconds * fs);
+        while (left > 0)
+        {
+            const int n = (int) std::min<long long> (left, blocks[bi++ % blocks.size()]);
+            AudioBuffer<float> b (numCh, n);
+            for (int i = 0; i < n; ++i, ph += 2.0 * MathConstants<double>::pi * 997.0 / fs)
+                for (int c = 0; c < numCh; ++c) b.setSample (c, i, (float) (amp * std::sin (ph)));
+            MidiBuffer m; p.processBlock (b, m);
+            left -= n;
+        }
+    };
+
+    {   // stereo, odd block sizes
+        MalonProcessor p; p.setPlayConfigDetails (2, 2, fs, 512); p.prepareToPlay (fs, 512);
+        feed (p, 2, 8.0, 0.1, { 1, 17, 480, 511, 64, 1024 });
+        auto r = p.getMeter().read();
+        std::printf ("  stereo: M %.3f S %.3f I %.3f LUFS, RMS %.3f dBFS, TP %.3f dBTP, LRA %.3f\n", r.momentary, r.shortTerm, r.integrated, r.rmsCombinedDb, r.truePeakMaxDb, r.loudnessRange);
+        CHECK (r.channels == 2);
+        CHECK (near (r.momentary, -20.0, 0.05) && near (r.shortTerm, -20.0, 0.05) && near (r.integrated, -20.0, 0.05));
+        CHECK (near (r.rmsCombinedDb, -23.01, 0.05) && near (r.rmsDb[0], -23.01, 0.05) && near (r.rmsDb[1], -23.01, 0.05));
+        CHECK (near (r.truePeakMaxDb, -20.0, 0.1) && ! r.clipped);
+        CHECK (r.loudnessRange < 0.1);
+
+        // reset clears everything, then it measures again
+        p.getMeter().requestReset();
+        feed (p, 2, 0.05, 0.0, { 480 });
+        r = p.getMeter().read();
+        CHECK (! std::isfinite (r.integrated) && ! std::isfinite (r.truePeakMaxDb) && ! r.clipped);
+        feed (p, 2, 4.0, 0.1, { 480 });
+        CHECK (near (p.getMeter().read().integrated, -20.0, 0.05));
+
+        // RMS window selectable through the parameter
+        setParam (p, ids::rmsWindow, 0);   // 100 ms
+        feed (p, 2, 0.5, 0.1, { 480 });
+        CHECK (near (p.getMeter().read().rmsCombinedDb, -23.01, 0.05));
+
+        // clip latch: a full-scale sample
+        {
+            AudioBuffer<float> b (2, 480); b.clear();
+            for (int i = 0; i < 480; ++i) { b.setSample (0, i, (i % 2) ? 1.0f : -1.0f); b.setSample (1, i, 0.0f); }
+            MidiBuffer m; p.processBlock (b, m);
+        }
+        r = p.getMeter().read();
+        CHECK_MSG (r.clipped && r.samplePeakMaxDb > -0.01, "clip not latched (%.2f)", r.samplePeakMaxDb);
+        CHECK (r.truePeakMaxDb >= -0.01);
+        feed (p, 2, 0.1, 0.01, { 480 });
+        CHECK (p.getMeter().read().clipped);                          // stays until reset
+        p.getMeter().requestReset(); feed (p, 2, 0.05, 0.01, { 480 });
+        CHECK (! p.getMeter().read().clipped);
+
+        // switching off stops measuring; switching on starts from a clean slate
+        setParam (p, ids::meterOn, 0);
+        feed (p, 2, 0.5, 0.5, { 480 });
+        CHECK (near (p.getMeter().read().truePeakMaxDb, -40.0, 0.2) || p.getMeter().read().truePeakMaxDb < -39.0);   // unchanged by the 0.5 burst
+        setParam (p, ids::meterOn, 1);
+        feed (p, 2, 1.0, 0.1, { 480 });
+        CHECK (near (p.getMeter().read().truePeakMaxDb, -20.0, 0.1));
+    }
+    {   // mono: one channel measured as one channel (-3 LU vs the same level on two channels)
+        MalonProcessor p; p.setPlayConfigDetails (1, 1, fs, 480); p.prepareToPlay (fs, 480);
+        feed (p, 1, 6.0, 0.1, { 480 });
+        auto r = p.getMeter().read();
+        std::printf ("  mono:   I %.3f LUFS, RMS %.3f dBFS\n", r.integrated, r.rmsCombinedDb);
+        CHECK (r.channels == 1);
+        CHECK (near (r.integrated, -23.01, 0.05) && near (r.rmsCombinedDb, -23.01, 0.05));
+    }
+    {   // silence
+        MalonProcessor p; p.setPlayConfigDetails (2, 2, fs, 480); p.prepareToPlay (fs, 480);
+        feed (p, 2, 4.0, 0.0, { 480 });
+        auto r = p.getMeter().read();
+        CHECK (! std::isfinite (r.integrated) && ! std::isfinite (r.momentary) && ! std::isfinite (r.truePeakMaxDb) && ! std::isfinite (r.rmsCombinedDb) && ! r.clipped);
+    }
+    {   // other sample rates + prepare again
+        for (double rate : { 44100.0, 96000.0 })
+        {
+            MalonProcessor p; p.setPlayConfigDetails (2, 2, rate, 480); p.prepareToPlay (rate, 480);
+            double ph = 0.0; for (int k = 0; k < (int) (6 * rate / 480); ++k)
+            {
+                AudioBuffer<float> b (2, 480);
+                for (int i = 0; i < 480; ++i, ph += 2.0 * MathConstants<double>::pi * 997.0 / rate) for (int c = 0; c < 2; ++c) b.setSample (c, i, (float) (0.1 * std::sin (ph)));
+                MidiBuffer m; p.processBlock (b, m);
+            }
+            CHECK_MSG (near (p.getMeter().read().integrated, -20.0, 0.05), "rate %.0f: I %.3f", rate, p.getMeter().read().integrated);
+        }
+    }
+}
+
 // ---- screenshots ------------------------------------------------------------
 
 struct Synth
@@ -172,7 +274,7 @@ static void runAudio (MalonProcessor& p, MalonEditor& ed, Synth& syn, double sec
     for (int k = 0; k < int (seconds * 48000 / blk); ++k)
     {
         AudioBuffer<float> b (2, blk);
-        for (int i = 0; i < blk; ++i) { const float s = syn.next(); b.setSample (0, i, s); b.setSample (1, i, s * 0.9f); }
+        for (int i = 0; i < blk; ++i) { const float s = syn.next(); b.setSample (0, i, s * 0.6f); b.setSample (1, i, s * 0.54f); }
         MidiBuffer m; p.processBlock (b, m);
         ed.pollNow (32.0);
     }
@@ -206,15 +308,15 @@ static void screenshots (const File& dir)
     MalonProcessor::useUserDefault() = false;
 
     MalonProcessor p; p.setPlayConfigDetails (2, 2, 48000, 1536); p.prepareToPlay (48000, 1536);
-    p.saveEditorSize (780, 400);
+    p.saveEditorSize (780, 480);
     auto ed = std::unique_ptr<MalonEditor> (static_cast<MalonEditor*> (p.createEditor()));
     ed->haltTimer();
-    CHECK (ed->getWidth() == 780 && ed->getHeight() == 400);
+    CHECK (ed->getWidth() == 780 && ed->getHeight() == 480);
     Synth syn;
     runAudio (p, *ed, syn, 5.0);
 
     // 1. default view
-    ed->setSize (780, 400);
+    ed->setSize (780, 480);
     CHECK (save (*ed, dir.getChildFile ("01-default.png")));
     auto img = snap (*ed);
     auto bounds = img.getBounds();
@@ -229,6 +331,25 @@ static void screenshots (const File& dir)
     const int dark = countPixels (img, bounds, [] (Colour c) { return c.getBrightness() < 0.12f; });
     CHECK_MSG (dark > bounds.getWidth() * bounds.getHeight() / 2, "UI not predominantly dark (%d)", dark);
 
+    // 1b. meters visible and showing real numbers; meters off hides the strip
+    CHECK (ed->isMeterVisible());
+    {
+        auto ro = p.getMeter().read();
+        std::printf ("  meter after 5 s of synth music: TP %.1f dBTP, RMS %.1f dBFS, I %.1f LUFS, LRA %.1f LU\n", ro.truePeakMaxDb, ro.rmsCombinedDb, ro.integrated, ro.loudnessRange);
+        CHECK (std::isfinite (ro.truePeakMaxDb) && std::isfinite (ro.rmsCombinedDb) && std::isfinite (ro.integrated) && std::isfinite (ro.shortTerm));
+        const int stripBlue = countPixels (img, { 0, ed->getHeight() - MeterStrip::preferredHeight, ed->getWidth(), MeterStrip::preferredHeight },
+                                           [] (Colour c) { return c.getBrightness() > 0.7f; });
+        CHECK_MSG (stripBlue > 300, "meter strip text not drawn (%d)", stripBlue);
+    }
+    setParam (p, ids::meterOn, 0);
+    ed->pollNow (32.0);
+    CHECK (! ed->isMeterVisible());
+    CHECK (save (*ed, dir.getChildFile ("01b-meters-off.png")));
+    setParam (p, ids::meterOn, 1);
+    ed->pollNow (32.0);
+    CHECK (ed->isMeterVisible());
+    runAudio (p, *ed, syn, 5.0);
+
     // 2. settings drawer open
     ed->setSize (1060, 640);
     ed->setSettingsOpen (true);
@@ -240,7 +361,7 @@ static void screenshots (const File& dir)
 
     // 3. display modes
     ed->setSettingsOpen (false);
-    ed->setSize (780, 400);
+    ed->setSize (780, 480);
     struct Mode { const char* name; float avgShow, holdShow; };
     const Mode modes[] = { { "03-bars.png", 0, 0 }, { "04-curve-fill.png", 2, 2 } };
     for (auto& m : modes)
@@ -267,10 +388,39 @@ static void screenshots (const File& dir)
     p.setColors (builtInSchemes()[0].scheme);
 
     // 6. tiny and big
-    ed->setSize (480, 260); runAudio (p, *ed, syn, 0.5);
+    ed->setSize (520, 340); runAudio (p, *ed, syn, 0.5);
     CHECK (save (*ed, dir.getChildFile ("08-small.png")));
     ed->setSize (1600, 800); runAudio (p, *ed, syn, 0.5);
     CHECK (save (*ed, dir.getChildFile ("09-large.png")));
+
+    // 6b. meters with a hot signal: inter-sample overs, clip light
+    {
+        ed->setSize (780, 480);
+        p.getMeter().requestReset();
+        runAudio (p, *ed, syn, 2.0);
+        for (int blk = 0; blk < 4; ++blk)
+        {
+            AudioBuffer<float> b (2, 1536); b.clear();
+            for (int i = 0; i < 1536; ++i) { const float v = (float) std::sin (2.0 * 3.14159265358979 * 12000.0 * i / 48000.0 + 0.785398); b.setSample (0, i, v); b.setSample (1, i, 0.5f * v); }
+            b.setSample (0, 700, 1.0f);
+            MidiBuffer m; p.processBlock (b, m); ed->pollNow (32.0);
+        }
+        runAudio (p, *ed, syn, 1.0);
+        auto ro = p.getMeter().read();
+        std::printf ("  hot signal: TP %.2f dBTP, sample peak %.2f dBFS, clip %d\n", ro.truePeakMaxDb, ro.samplePeakMaxDb, (int) ro.clipped);
+        CHECK (ro.clipped && ro.truePeakMaxDb > 0.0);
+        CHECK (save (*ed, dir.getChildFile ("11-meters-clip.png")));
+        // the Reset button on the strip clears it
+        ed->getMeterStrip().onReset();
+        runAudio (p, *ed, syn, 0.2);
+        CHECK (! p.getMeter().read().clipped);
+        // narrow window with the settings drawer open: the strip must not overlap anything
+        ed->setSize (620, 400); ed->setSettingsOpen (true);
+        runAudio (p, *ed, syn, 0.5);
+        CHECK (save (*ed, dir.getChildFile ("12-meters-with-settings.png")));
+        ed->setSettingsOpen (false);
+        ed->setSize (780, 480);
+    }
 
     // 7. about box (MIT notice + credit)
     ed->setSize (780, 460);
@@ -279,7 +429,7 @@ static void screenshots (const File& dir)
     ed->showAbout (false);
 
     // freeze really freezes
-    ed->setSize (780, 400);
+    ed->setSize (780, 480);
     runAudio (p, *ed, syn, 0.5);
     ed->setFrozen (true);
     const double before = ed->getModel().peak[20];
@@ -301,6 +451,7 @@ int main (int argc, char** argv)
     testPassthroughAndLayouts();
     testParametersAndState();
     testEndToEnd();
+    testMeterInProcessor();
     screenshots (out);
     std::printf ("\n%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;

@@ -28,7 +28,7 @@ else()
 endif()
 
 # ---- 1. DSP core: no JUCE, no platform code ----
-add_library(MalonDsp STATIC Source/dsp/FilterBank.cpp)
+add_library(MalonDsp STATIC Source/dsp/FilterBank.cpp Source/dsp/LevelMeter.cpp)
 target_include_directories(MalonDsp PUBLIC Source)
 find_package(Threads REQUIRED)
 target_link_libraries(MalonDsp PUBLIC Threads::Threads)
@@ -39,7 +39,8 @@ add_library(MalonCore STATIC
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/ui/SpectrumView.cpp
-    Source/ui/SettingsPanel.cpp)
+    Source/ui/SettingsPanel.cpp
+    Source/ui/MeterStrip.cpp)
 target_include_directories(MalonCore PUBLIC Source)
 target_compile_definitions(MalonCore PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0
@@ -93,6 +94,11 @@ if(MALON_BUILD_TESTS)
     add_executable(MalonDspTests Tests/DspTests.cpp)
     target_link_libraries(MalonDspTests PRIVATE MalonDsp)
     add_test(NAME dsp COMMAND MalonDspTests)
+
+    # loudness / true-peak / RMS meter against BS.1770-4, EBU Tech 3341 / 3342 (no JUCE needed)
+    add_executable(MalonMeterTests Tests/MeterTests.cpp)
+    target_link_libraries(MalonMeterTests PRIVATE MalonDsp)
+    add_test(NAME meter COMMAND MalonMeterTests)
 
     # processor tests + headless screenshots: console app that links the same code as the plugin
     juce_add_console_app(MalonPluginTests PRODUCT_NAME "MalonPluginTests")
