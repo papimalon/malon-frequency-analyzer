@@ -29,7 +29,7 @@ jobs:
             os: windows-latest
             artifact: Malon-Frequency-Analyzer-Windows
           - name: macOS (VST3 + AU, universal)
-            os: macos-14
+            os: macos-15-intel
             artifact: Malon-Frequency-Analyzer-macOS
           - name: Linux (VST3, tests only)
             os: ubuntu-22.04
@@ -57,6 +57,14 @@ jobs:
 
       - name: Build
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 4
+
+      - name: Check universal binaries (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          for b in "build/MalonFrequencyAnalyzer_artefacts/${{ env.BUILD_TYPE }}/VST3/Malon Frequency Analyzer.vst3/Contents/MacOS/"* \
+                   "build/MalonFrequencyAnalyzer_artefacts/${{ env.BUILD_TYPE }}/AU/Malon Frequency Analyzer.component/Contents/MacOS/"*; do
+            lipo -archs "$b" | tee /dev/stderr | grep -q arm64 && lipo -archs "$b" | grep -q x86_64
+          done
 
       - name: DSP + plugin tests (Linux uses a virtual display)
         if: runner.os == 'Linux'
