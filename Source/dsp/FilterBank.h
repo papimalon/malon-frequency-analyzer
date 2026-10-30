@@ -28,7 +28,7 @@ namespace malon
 constexpr int kMaxFilters = 72;   // nBands + 1 filters must fit in here
 constexpr int kMaxBands   = kMaxFilters - 1;
 
-enum class ChannelMode { Left = 0, Right = 1, Both = 2, Mix = 3 };
+enum class ChannelMode { Left = 0, Right = 1, Both = 2, Mix = 3, Mid = 4, Side = 5 };
 
 /** What the UI thread gets: accumulated squared peak and summed squares per output.
     Output 0 is the "everything below the first band" low-pass remainder (not drawn);

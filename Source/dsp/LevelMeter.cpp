@@ -1,5 +1,6 @@
 // Malon Frequency Analyzer - Copyright (C) 2026 MUSICA MALON, AGPL-3.0-or-later (see LICENSE)
 #include "LevelMeter.h"
+#include "Sanitize.h"
 #include <algorithm>
 #include <cstring>
 
@@ -11,7 +12,7 @@ namespace
     constexpr double kPi = 3.14159265358979323846;
 
     // indices into the published array
-    enum Pub { TpMax, TpL, TpR, SpMax, RmsL, RmsR, RmsAll, Mom, Short, Integ, Lra, MomMax, ShortMax, NumPub };
+    enum Pub { TpMax, TpL, TpR, SpMax, RmsL, RmsR, RmsAll, Mom, Short, Integ, Lra, MomMax, ShortMax, Corr, NumPub };
 
     double besselI0 (double x)
     {
@@ -20,8 +21,10 @@ namespace
         return sum;
     }
 
-    inline float toDbF (double lin) { return lin > 0.0 ? (float) (20.0 * std::log10 (lin)) : -std::numeric_limits<float>::infinity(); }
-    inline float msToDbF (double ms) { return ms > 0.0 ? (float) (10.0 * std::log10 (ms)) : -std::numeric_limits<float>::infinity(); }
+    constexpr float kNegInfF = -std::numeric_limits<float>::infinity();
+    inline float floorDb (double db) { return db < kDisplayFloorDb ? kNegInfF : (float) db; }
+    inline float toDbF (double lin) { return lin > 0.0 ? floorDb (20.0 * std::log10 (lin)) : kNegInfF; }
+    inline float msToDbF (double ms) { return ms > 0.0 ? floorDb (10.0 * std::log10 (ms)) : kNegInfF; }
 }
 
 LevelMeter::LevelMeter()
@@ -62,6 +65,7 @@ void LevelMeter::prepare (double sampleRate, int numChannels)
     fs = sampleRate;
     channels = std::max (1, std::min (kMaxChannels, numChannels));
     kw = designKWeighting (fs);
+    corrCoef = 1.0 - std::exp (-1.0 / (0.3 * fs));
 
     // true-peak interpolator: windowed-sinc, 4 phases x 24 taps, Kaiser window (beta 6).
     // Phase 0 is the identity, so the original samples are always included.
@@ -124,6 +128,7 @@ void LevelMeter::reset() noexcept
     std::fill (std::begin (blockRing), std::end (blockRing), 0.0);
     blockHead = 0; blockPos = 0; blocksTotal = 0;
     momentaryMaxLin = shortTermMaxLin = 0.0;
+    corrLR = corrLL = corrRR = 0.0;
     lastMomentary = lastShort = lastIntegrated = lastLra = kNegInf;
     if (! gateCount.empty())
     {
@@ -250,7 +255,7 @@ void LevelMeter::processImpl (const T* const* in, int numCh, int n) noexcept
         tpIdx = (tpIdx + T2 - 1) % T2;                   // newest sample lives at tpIdx, older ones follow
         for (int c = 0; c < nc; ++c)
         {
-            const double x = (double) in[c][i];
+            const double x = sanitizeSample ((double) in[c][i]);
             const double ax = std::fabs (x);
 
             // ---- true peak: 4x oversampling ----
@@ -278,6 +283,13 @@ void LevelMeter::processImpl (const T* const* in, int numCh, int n) noexcept
             }
             blockAcc[c] += y * y;
             rmsBinAcc[c] += x * x;
+        }
+        if (nc == 2)
+        {
+            const double a = sanitizeSample ((double) in[0][i]), b = sanitizeSample ((double) in[1][i]);
+            corrLR += corrCoef * (a * b - corrLR);
+            corrLL += corrCoef * (a * a - corrLL);
+            corrRR += corrCoef * (b * b - corrRR);
         }
         if (++blockPos >= blockLen) { blockPos = 0; finishLoudnessBlock(); }
         if (++rmsBinPos >= rmsBinLen) { rmsBinPos = 0; finishRmsBin(); }
@@ -318,6 +330,12 @@ void LevelMeter::publish() noexcept
                                  : (float) lastLra);
     put (MomMax, (float) lufs (momentaryMaxLin));
     put (ShortMax, (float) lufs (shortTermMaxLin));
+    {
+        const double d = corrLL * corrRR;
+        float c = std::numeric_limits<float>::quiet_NaN();                 // NaN = no reading (mono / silence)
+        if (channels > 1 && d > 1.0e-14) c = (float) std::max (-1.0, std::min (1.0, corrLR / std::sqrt (d)));
+        put (Corr, c);
+    }
     pubClip.store (clipLatch ? 1 : 0, std::memory_order_relaxed);
 }
 
@@ -333,6 +351,9 @@ LevelMeter::Readout LevelMeter::read() const noexcept
     r.momentary = get (Mom); r.shortTerm = get (Short); r.integrated = get (Integ);
     r.loudnessRange = get (Lra);
     r.momentaryMax = get (MomMax); r.shortTermMax = get (ShortMax);
+    const double c = get (Corr);
+    r.correlationValid = std::isfinite (c);
+    r.correlation = r.correlationValid ? c : 0.0;
     return r;
 }
 

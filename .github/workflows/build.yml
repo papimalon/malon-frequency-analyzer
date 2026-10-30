@@ -120,10 +120,17 @@ jobs:
         run: |
           mkdir -p dist
           A="build/MalonFrequencyAnalyzer_artefacts/${{ env.BUILD_TYPE }}"
-          cp LICENSE LICENSE-SEVEN-PHASES-MIT THIRD_PARTY_NOTICES.md README.md dist/
+          cp LICENSE LICENSE-SEVEN-PHASES-MIT THIRD_PARTY_NOTICES.md docs/SOURCE.txt dist/
           cp -R "$A/VST3" dist/
+          # linker leftovers (.exp / .lib) are not part of the plugin
+          find dist/VST3 -maxdepth 1 -type f \( -name '*.exp' -o -name '*.lib' -o -name '*.pdb' \) -delete
           if [ -d "$A/AU" ]; then cp -R "$A/AU" dist/; fi
-          if [ -d build/screenshots ]; then cp -R build/screenshots dist/screenshots; fi
+          case "${{ runner.os }}" in
+            Windows) cp docs/INSTALL-Windows.txt dist/INSTALL.txt ;;
+            macOS)   cp docs/INSTALL-macOS.txt dist/INSTALL.txt
+                     for b in dist/VST3/*.vst3/Contents/MacOS/* dist/AU/*.component/Contents/MacOS/*; do lipo -archs "$b" | tee -a dist/ARCHITECTURES.txt; done ;;
+            *)       cp README.md dist/ ;;
+          esac
           cd dist && cmake -E tar cf "../${{ matrix.artifact }}.zip" --format=zip .
 
       - uses: actions/upload-artifact@v4

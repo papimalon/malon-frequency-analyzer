@@ -54,7 +54,7 @@ void MalonProcessor::processImpl (AudioBuffer<Sample>& buffer)
         bank.prepare (currentFs, bpo);     // pure arithmetic on fixed arrays: no allocation, no waiting
     }
 
-    const auto mode = (ChannelMode) jlimit (0, 3, (int) pChannel->load());
+    const auto mode = (ChannelMode) jlimit (0, 5, (int) pChannel->load());
     const Sample* l = buffer.getReadPointer (0);
     const Sample* r = buffer.getReadPointer (numCh > 1 ? 1 : 0);
     bank.process (l, r, n, mode);
@@ -79,7 +79,7 @@ DisplaySettings MalonProcessor::getDisplaySettings() const
 {
     auto v = [this] (const char* id) { return (double) apvts.getRawParameterValue (id)->load(); };
     DisplaySettings s;
-    s.channel      = (ChannelMode) jlimit (0, 3, (int) v (ids::channel));
+    s.channel      = (ChannelMode) jlimit (0, 5, (int) v (ids::channel));
     s.peakOn       = v (ids::peakOn) > 0.5;
     s.peakDecay    = v (ids::peakDecay);
     s.avgOn        = v (ids::avgOn) > 0.5;
@@ -105,7 +105,7 @@ void MalonProcessor::setColors (const ColorScheme& c)
 
 Point<int> MalonProcessor::getSavedEditorSize() const
 {
-    return { (int) apvts.state.getProperty (kEdW, 780), (int) apvts.state.getProperty (kEdH, 480) };
+    return { (int) apvts.state.getProperty (kEdW, 780), (int) apvts.state.getProperty (kEdH, 600) };
 }
 void MalonProcessor::saveEditorSize (int w, int h)
 {

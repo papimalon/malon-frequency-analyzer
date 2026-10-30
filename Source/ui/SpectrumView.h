@@ -35,6 +35,9 @@ public:
     /** The inner plotting rectangle for the current size. */
     juce::Rectangle<float> getPlotArea() const;
 
+    /** For screenshots/tests: pretend the mouse is at this position. */
+    void simulateHover (juce::Point<float> p) { mouse = p; hasMouse = true; repaint(); }
+
 private:
     void drawGrid (juce::Graphics&, juce::Rectangle<float> plot, int numBands);
     void drawCurve (juce::Graphics&, const double* levelDb, int n, juce::Rectangle<float> plot,

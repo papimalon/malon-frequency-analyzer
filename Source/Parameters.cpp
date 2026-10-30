@@ -22,7 +22,7 @@ AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 
     const StringArray show { "Bars", "Curve", "Curve Fill" };
 
-    choice ("channel", "Channel", { "Left", "Right", "Both", "Mix" }, 2);
+    choice ("channel", "Channel", { "Left", "Right", "Both", "Mix", "Mid", "Side" }, 2);
 
     toggle ("peakOn", "Peak", true);
     number ("peakDecay", "Peak Decay", 1, 60, 1, 15, "dB/s");
@@ -49,6 +49,7 @@ AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // pro metering (true peak, RMS, loudness) - a separate, switchable section
     toggle ("meterOn", "Meters", true);
     choice ("rmsWindow", "RMS Window", { "100 ms", "300 ms", "1 s", "3 s" }, 1);
+    choice ("historyMode", "History", { "LUFS", "RMS", "Peak" }, 0);
 
     return l;
 }

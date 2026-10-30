@@ -7,7 +7,8 @@ using namespace juce;
 
 String MeterStrip::fmt (double db, int decimals)
 {
-    if (! std::isfinite (db)) return "--.-";
+    if (std::isnan (db)) return "--.-";
+    if (! std::isfinite (db) || db < -150.0) return db > 0 ? "+inf" : "-inf";
     if (db > -0.05 && db < 0.0 && decimals == 1) return "0.0";       // never "-0.0"
     return String (db, decimals);
 }

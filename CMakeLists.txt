@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-set(MALON_VERSION 1.0.0)
+set(MALON_VERSION 1.1.0)
 project(MalonFrequencyAnalyzer VERSION ${MALON_VERSION} LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -40,7 +40,8 @@ add_library(MalonCore STATIC
     Source/PluginEditor.cpp
     Source/ui/SpectrumView.cpp
     Source/ui/SettingsPanel.cpp
-    Source/ui/MeterStrip.cpp)
+    Source/ui/MeterStrip.cpp
+    Source/ui/HistoryPanel.cpp)
 target_include_directories(MalonCore PUBLIC Source)
 target_compile_definitions(MalonCore PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0

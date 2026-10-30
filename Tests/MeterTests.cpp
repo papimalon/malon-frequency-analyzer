@@ -489,6 +489,49 @@ static void testTruePeak()
     }
 }
 
+
+static void testNonFiniteAndFloors()
+{
+    std::printf ("[robustness] NaN / inf samples are ignored, silence reads -inf, correlation\n");
+    const double fs = 48000.0;
+    for (double bad : { std::nan (""), (double) INFINITY, -(double) INFINITY, 1e30 })
+    {
+        Sig s = tone (fs, 1000.0, -20.0, 10.0);
+        s[0][48000] = bad; s[1][96000] = bad;
+        LevelMeter m; m.prepare (fs, 2);
+        run (m, s);
+        const auto r = m.read();
+        CHECK_MSG (near (r.rmsCombinedDb, -23.01, 0.05), "bad %g: rms %.2f", bad, r.rmsCombinedDb);
+        CHECK_MSG (near (r.momentary, -20.0, 0.1) && near (r.shortTerm, -20.0, 0.1), "bad %g: M %.2f S %.2f", bad, r.momentary, r.shortTerm);
+        CHECK_MSG (near (r.integrated, -20.0, 0.1), "bad %g: I %.2f", bad, r.integrated);
+        CHECK_MSG (near (r.truePeakMaxDb, -20.0, 0.1) && ! r.clipped, "bad %g: tp %.2f clip %d", bad, r.truePeakMaxDb, (int) r.clipped);
+        CHECK_MSG (std::isfinite (r.truePeakMaxDb), "tp not finite");
+        CHECK_MSG (r.correlationValid && near (r.correlation, 1.0, 0.01), "corr %.3f", r.correlation);
+    }
+    {   // sine then 20 s silence: everything goes to -inf, never -2134
+        Sig s = tone (fs, 1000.0, -20.0, 5.0); append (s, silence (fs, 20.0));
+        const auto r = measure (s);
+        CHECK_MSG (r.shortTerm == -INFINITY && r.momentary == -INFINITY && r.rmsCombinedDb == -INFINITY, "M %g S %g rms %g", r.momentary, r.shortTerm, r.rmsCombinedDb);
+        CHECK (! r.correlationValid);
+    }
+    {   // denormal input
+        Sig s = makeSig (2, 48000); for (auto& c : s) for (auto& v : c) v = 1e-39;
+        const auto r = measure (s);
+        CHECK_MSG (r.samplePeakMaxDb == -INFINITY && r.rmsCombinedDb == -INFINITY, "sp %g rms %g", r.samplePeakMaxDb, r.rmsCombinedDb);
+    }
+    {   // correlation: inverted -> -1, uncorrelated noise -> ~0, mono meter -> invalid
+        Sig s = tone (fs, 1000.0, -20.0, 2.0); for (auto& v : s[1]) v = -v;
+        auto r = measure (s);
+        CHECK_MSG (r.correlationValid && near (r.correlation, -1.0, 0.01), "inv %.3f", r.correlation);
+        std::mt19937 g (3); std::normal_distribution<double> nd (0.0, 0.1);
+        Sig n = makeSig (2, 96000); for (auto& c : n) for (auto& v : c) v = nd (g);
+        r = measure (n);
+        CHECK_MSG (r.correlationValid && std::fabs (r.correlation) < 0.1, "noise %.3f", r.correlation);
+        r = measure (tone (fs, 1000.0, -20.0, 2.0, 1));
+        CHECK (! r.correlationValid);
+    }
+}
+
 int main()
 {
     testKWeightingCoefficients();
@@ -500,6 +543,7 @@ int main()
     testLra();
     testAgainstBatchReference();
     testTruePeak();
+    testNonFiniteAndFloors();
     std::printf ("\n%d checks, %d failures\n", g_checks, g_fail);
     return g_fail == 0 ? 0 : 1;
 }

@@ -60,7 +60,7 @@ void AboutOverlay::mouseUp (const MouseEvent& e)
 // ---- Editor ----------------------------------------------------------------
 
 MalonEditor::MalonEditor (MalonProcessor& p)
-    : AudioProcessorEditor (&p), proc (p), content (p), strip (p)
+    : AudioProcessorEditor (&p), proc (p), content (p), strip (p), history (p)
 {
     setLookAndFeel (&laf);
     view.setData (&model);
@@ -82,6 +82,11 @@ MalonEditor::MalonEditor (MalonProcessor& p)
     metersButton.setClickingTogglesState (true);
     metersButton.setTooltip ("Show the pro meters: true peak, RMS, loudness (M)");
     addChildComponent (strip);
+    addChildComponent (history);
+    channelBox.addItemList ({ "Left", "Right", "Stereo", "Mix", "Mid", "Side" }, 1);
+    channelBox.setTooltip ("What the spectrum shows: Left, Right, both (Stereo), L+R Mix, Mid (centre) or Side (stereo width)");
+    addAndMakeVisible (channelBox);
+    channelAtt = std::make_unique<ComboBoxParameterAttachment> (*proc.apvts.getParameter (ids::channel), channelBox);
     strip.onReset = [this] { resetMeters(); };
     freezeButton.setTooltip ("Freeze the display (F)");
     resetButton.setTooltip ("Clear peaks, holds and averages (R)");
@@ -149,9 +154,18 @@ void MalonEditor::resized()
     freezeButton.setBounds (top.removeFromRight (74));
     top.removeFromRight (6);
     metersButton.setBounds (top.removeFromRight (80));
+    top.removeFromRight (6);
+    channelBox.setVisible (top.getWidth() >= 190);
+    channelBox.setBounds (top.removeFromRight (90).reduced (0, 2));
 
     if (strip.isVisible())
+    {
         strip.setBounds (r.removeFromBottom (MeterStrip::preferredHeight));
+        const bool roomForHistory = r.getHeight() >= 190 + HistoryPanel::preferredHeight;
+        history.setVisible (roomForHistory);
+        if (roomForHistory) history.setBounds (r.removeFromBottom (HistoryPanel::preferredHeight));
+    }
+    else history.setVisible (false);
 
     if (settingsOpen)
     {
@@ -200,6 +214,7 @@ void MalonEditor::resetAll()
 void MalonEditor::resetMeters()
 {
     proc.getMeter().requestReset();
+    history.clear();
     double dump[2]; proc.getMeter().consumeRecentPeaks (dump);
     liveDb[0] = liveDb[1] = -200.0;
 }
@@ -265,7 +280,12 @@ void MalonEditor::pollNow (double dtMs)
             liveDb[ch] = jmax (liveDb[ch] - 24.0 * dtMs / 1000.0, -200.0);                       // 24 dB/s fall
             if (pk[ch] > 0.0) liveDb[ch] = jmax (liveDb[ch], 20.0 * std::log10 (pk[ch]));
         }
-        strip.setReadout (proc.getMeter().read(), liveDb[0], liveDb[1]);
+        const auto ro = proc.getMeter().read();
+        strip.setReadout (ro, liveDb[0], liveDb[1]);
+        const double pkMax = jmax (pk[0], pk[1]);
+        const double pkDb = pkMax > 0.0 ? 20.0 * std::log10 (pkMax) : -std::numeric_limits<double>::infinity();
+        if (history.isVisible()) history.push (ro.momentary, ro.rmsCombinedDb, pkDb < -150.0 ? -std::numeric_limits<double>::infinity() : pkDb,
+                                               ro.correlationValid, ro.correlation);
     }
 }
 

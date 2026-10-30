@@ -1,0 +1,18 @@
+MALON FREQUENCY ANALYZER 1.1 - Windows (VST3, 64-bit)
+
+1. Unzip this file.
+2. Copy the folder  VST3\Malon Frequency Analyzer.vst3
+   to               C:\Program Files\Common Files\VST3
+   (Windows asks for admin permission - click Continue.)
+3. Open your DAW and rescan plugins.
+   FL Studio: Options > Manage plugins > Find installed plugins.
+   Ableton Live: Preferences > Plug-ins > VST3 on > Rescan.
+4. Load "Malon Frequency Analyzer" on a track or the master.
+
+If Windows SmartScreen warns about the download, click "More info" > "Keep / Run anyway".
+The plugin is not code-signed yet; that is the only reason for the warning.
+
+Tips: M = meters on/off, F = freeze, R = reset. Hover the graph to read frequency and level.
+The channel menu (top bar) switches Stereo / Left / Right / Mix / Mid / Side.
+
+Free software under the GNU AGPL v3 - see LICENSE and SOURCE.txt.

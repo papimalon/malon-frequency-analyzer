@@ -422,6 +422,38 @@ static void testThreads()
    #endif
 }
 
+
+static void testNonFiniteAndMidSide()
+{
+    std::printf ("[robustness] NaN / inf never lock the filter bank; mid / side modes\n");
+    const double fs = 48000.0;
+    for (float bad : { std::nanf (""), INFINITY, -INFINITY })
+    {
+        FilterBank fb; fb.prepare (fs, 6);
+        auto s = sine (fs, 1000.0, 0.1, 3.0);
+        s[1000] = bad; s[50000] = bad;
+        feed (fb, s, s, ChannelMode::Both);
+        Readout dump; fb.read (dump);
+        auto t = sine (fs, 1000.0, 0.1, 1.0);
+        feed (fb, t, t, ChannelMode::Both);
+        Readout r; fb.read (r);
+        int best = 0; for (int i = 0; i < r.numBands; ++i) if (peakDb (r, i) > peakDb (r, best)) best = i;
+        CHECK_MSG (std::isfinite (peakDb (r, best)) && std::fabs (peakDb (r, best) + 20.0) < 1.0, "bad %g: peak %.2f", (double) bad, peakDb (r, best));
+        CHECK_MSG (std::fabs (bandCentre (r, best) - 1000.0) < 60.0, "band %.0f", bandCentre (r, best));
+    }
+    // mid/side: identical L/R -> side silent; inverted -> mid silent
+    auto a = sine (fs, 1000.0, 0.1, 1.5), inv = a; for (auto& v : inv) v = -v;
+    auto lvl = [&] (ChannelMode m, const std::vector<float>& l, const std::vector<float>& rr)
+    {
+        FilterBank fb; fb.prepare (fs, 6); feed (fb, l, rr, m); Readout r; fb.read (r);
+        double mx = -400; for (int i = 0; i < r.numBands; ++i) mx = std::max (mx, peakDb (r, i)); return mx;
+    };
+    const double midSame = lvl (ChannelMode::Mid, a, a), sideSame = lvl (ChannelMode::Side, a, a);
+    const double midInv = lvl (ChannelMode::Mid, a, inv), sideInv = lvl (ChannelMode::Side, a, inv);
+    CHECK_MSG (std::fabs (midSame + 20.0) < 1.0 && sideSame < -100.0, "same: mid %.1f side %.1f", midSame, sideSame);
+    CHECK_MSG (std::fabs (sideInv + 20.0) < 1.0 && midInv < -100.0, "inv: mid %.1f side %.1f", midInv, sideInv);
+}
+
 int main (int argc, char** argv)
 {
     for (int i = 1; i < argc; ++i) if (std::string (argv[i]) == "-v") g_verbose = true;
@@ -436,6 +468,7 @@ int main (int argc, char** argv)
     testBallistics();
     testDisplayModel();
     testThreads();
+    testNonFiniteAndMidSide();
     std::printf("\n%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

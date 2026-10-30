@@ -8,7 +8,7 @@ inline constexpr const char* version = MALON_VERSION_STRING;
 inline constexpr const char* about =
     "A free, open-source real-time filter-bank spectrum analyzer.\n"
     "Copyright (C) 2026 MUSICA MALON. Free software under the GNU Affero General Public License v3 (AGPL-3.0). "
-    "The complete source code is available from manymalon.com.\n"
+    "The complete source code is available at github.com/papimalon/malon-frequency-analyzer.\n"
     "\n"
     "Based on \"Spectrum Analyzer\" by Max Mikhailov (Seven Phases), used under the MIT License. "
     "The filter-bank design was ported to portable C++; the user interface, colours and branding are new.\n"

@@ -40,6 +40,8 @@ public:
         double integrated = kNegInf;                        // LUFS (gated)
         double loudnessRange = kNegInf;                     // LU (kNegInf until 3 s of audio)
         double momentaryMax = kNegInf, shortTermMax = kNegInf;
+        double correlation = 0.0;                           // -1 .. +1 (stereo only)
+        bool   correlationValid = false;                    // false for mono or silence
     };
 
     LevelMeter();
@@ -71,8 +73,13 @@ public:
     struct Biquad { double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0; };
     static std::array<Biquad, 2> designKWeighting (double sampleRate);
 
+    /** Mean square -> LUFS; anything below -150 is reported as -inf (no "-2134 LUFS" on silence). */
     static double lufs (double meanSquare) noexcept
-    { return meanSquare > 0.0 ? -0.691 + 10.0 * std::log10 (meanSquare) : kNegInf; }
+    {
+        if (! (meanSquare > 0.0)) return kNegInf;
+        const double l = -0.691 + 10.0 * std::log10 (meanSquare);
+        return l < -150.0 ? kNegInf : l;
+    }
 
 private:
     template <typename T> void processImpl (const T* const* in, int numChannels, int numSamples) noexcept;
@@ -120,6 +127,9 @@ private:
     double rmsSum[kMaxChannels] {};
 
     int    handledResets = 0;
+
+    // stereo correlation (one-pole averages, ~300 ms)
+    double corrCoef = 0.0, corrLR = 0.0, corrLL = 0.0, corrRR = 0.0;
 
     // ---- published (relaxed atomics; a read may mix two neighbouring updates, which is harmless) ----
     std::atomic<int> resetRequests { 0 };

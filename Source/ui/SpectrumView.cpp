@@ -177,23 +177,67 @@ void SpectrumView::paint (Graphics& g)
     }
 
 
-    // pointer read-out
+    // legend: which colour is which (only the traces that are on)
+    {
+        struct Item { const char* name; Colour c; bool bar; };
+        Item items[3]; int count = 0;
+        if (settings.peakOn) items[count++] = { "PEAK", cPeak, true };
+        if (settings.holdOn) items[count++] = { "HOLD", cHold, false };
+        if (settings.avgOn)  items[count++] = { "AVERAGE", cAvg, false };
+        float x = plot.getX() + 10.0f;
+        const float y = plot.getY() + 8.0f;
+        if (settings.frozen) x += 62.0f;
+        g.setFont (uiFont (9.5f).withExtraKerningFactor (0.12f));
+        for (int i = 0; i < count; ++i)
+        {
+            g.setColour (items[i].c.withAlpha (1.0f));
+            if (items[i].bar) g.fillRect (x, y + 1.0f, 8.0f, 8.0f);
+            else              g.fillRoundedRectangle (x, y + 4.0f, 12.0f, 2.0f, 1.0f);
+            const float sw = items[i].bar ? 8.0f : 12.0f;
+            g.setColour (colors[ColorScheme::GridLabel]);
+            const float tw = (float) GlyphArrangement::getStringWidthInt (g.getCurrentFont(), items[i].name);
+            g.drawText (items[i].name, Rectangle<float> (x + sw + 5.0f, y - 1.0f, tw + 4.0f, 12.0f), Justification::centredLeft, false);
+            x += sw + 5.0f + tw + 14.0f;
+        }
+    }
+
+    // pointer read-out: frequency of the band under the cursor and its levels
     if (hasMouse && plot.contains (mouse) && model->freqMax > model->freqMin)
     {
-        const float x0 = plot.getX() + 0.5f * slot, span = plot.getWidth() - slot;
-        const double t = juce::jlimit (0.0, 1.0, (double) ((mouse.x - x0) / span));
-        const double hz = model->freqMin * std::exp (std::log (model->freqMax / model->freqMin) * t);
+        const int band = juce::jlimit (0, n - 1, (int) ((mouse.x - plot.getX()) / slot));
+        const double hz = model->freqMin * std::pow (model->freqMax / model->freqMin, (double) band / (double) juce::jmax (1, n - 1));
         const double db = settings.ceiling - (mouse.y - plot.getY()) / (plot.getHeight() / settings.range);
+        auto dbText = [] (double v) { return v <= -150.0 || ! std::isfinite (v) ? String ("-inf") : String (v, 1); };
+
+        g.setColour (colors[ColorScheme::GridLabel].withAlpha (0.10f));
+        g.fillRect (plot.getX() + (float) band * slot, plot.getY(), slot, plot.getHeight());
         g.setColour (colors[ColorScheme::GridLabel].withAlpha (0.5f));
-        g.drawVerticalLine ((int) mouse.x, plot.getY(), plot.getBottom());
         g.drawHorizontalLine ((int) mouse.y, plot.getX(), plot.getRight());
-        const String text = String (roundToInt (hz)) + " Hz   " + String (db, 1) + " dB";
-        auto r = Rectangle<float> (plot.getRight() - 128, plot.getY() + 6, 122, 18);
-        g.setColour (Colours::black.withAlpha (0.65f));
-        g.fillRoundedRectangle (r, 4.0f);
-        g.setColour (Colours::white.withAlpha (0.9f));
-        g.setFont (uiFont (11.0f));
-        g.drawText (text, r, Justification::centred, false);
+
+        const String hzText = hz < 1000.0 ? String (roundToInt (hz)) + " Hz" : String (hz / 1000.0, hz < 10000.0 ? 2 : 1) + " kHz";
+        StringArray lines;
+        lines.add (hzText + "    cursor " + dbText (db) + " dB");
+        String levels;
+        if (settings.peakOn) levels << "peak " << dbText (model->peak[band]) << "   ";
+        if (settings.holdOn) levels << "hold " << dbText (model->hold[band]) << "   ";
+        if (settings.avgOn)  levels << "avg " << dbText (model->avg[band]);
+        if (levels.isNotEmpty()) lines.add (levels.trimEnd() + " dB");
+
+        const float w = 232.0f, h = 8.0f + 15.0f * (float) lines.size();
+        float bx = mouse.x + 14.0f, by = mouse.y + 14.0f;
+        if (bx + w > plot.getRight() - 4.0f) bx = mouse.x - 14.0f - w;
+        if (by + h > plot.getBottom() - 4.0f) by = mouse.y - 14.0f - h;
+        auto r = Rectangle<float> (bx, by, w, h);
+        g.setColour (Colour (0xF00C0E14));
+        g.fillRoundedRectangle (r, 5.0f);
+        g.setColour (Colours::white.withAlpha (0.12f));
+        g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
+        for (int i = 0; i < lines.size(); ++i)
+        {
+            g.setColour (i == 0 ? Colours::white.withAlpha (0.95f) : colors[ColorScheme::GridLabel].brighter (0.4f));
+            g.setFont (uiFont (11.0f, i == 0));
+            g.drawText (lines[i], r.withTrimmedLeft (10.0f).withTrimmedTop (4.0f + 15.0f * (float) i).withHeight (15.0f), Justification::centredLeft, false);
+        }
     }
 
     if (settings.frozen)

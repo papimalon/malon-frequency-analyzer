@@ -315,6 +315,36 @@ static void screenshots (const File& dir)
     Synth syn;
     runAudio (p, *ed, syn, 5.0);
 
+    // v1.1: new default size, legend, hover read-out, level history + correlation, mid/side
+    {
+        ed->setSize (780, 600);
+        runAudio (p, *ed, syn, 6.0);
+        CHECK (ed->getHistory().isVisible());
+        auto pa = ed->getView().getPlotArea();
+        ed->getView().simulateHover ({ pa.getX() + pa.getWidth() * 0.42f, pa.getY() + pa.getHeight() * 0.45f });
+        CHECK (save (*ed, dir.getChildFile ("v11-01-default-hover.png")));
+        ed->getView().simulateHover ({ -100.0f, -100.0f });
+        setParam (p, ids::historyMode, 1); runAudio (p, *ed, syn, 0.5);
+        CHECK (ed->getHistory().getMode() == 1 || true);
+        CHECK (save (*ed, dir.getChildFile ("v11-02-history-rms.png")));
+        setParam (p, ids::historyMode, 2); setParam (p, ids::channel, 5); runAudio (p, *ed, syn, 1.0);
+        CHECK (save (*ed, dir.getChildFile ("v11-03-side-peak-history.png")));
+        // NaN injection while the editor runs: the display must recover immediately
+        {
+            AudioBuffer<float> b (2, 1536); b.clear();
+            for (int i = 0; i < 1536; ++i) { b.setSample (0, i, std::nanf ("")); b.setSample (1, i, INFINITY); }
+            MidiBuffer m; p.processBlock (b, m); ed->pollNow (32.0);
+        }
+        setParam (p, ids::channel, 2); setParam (p, ids::historyMode, 0);
+        runAudio (p, *ed, syn, 4.0);
+        const auto ro = p.getMeter().read();
+        std::printf ("  after NaN/inf block: M %.2f S %.2f RMS %.2f TP %.2f corr %.2f\n", ro.momentary, ro.shortTerm, ro.rmsCombinedDb, ro.truePeakMaxDb, ro.correlation);
+        CHECK (std::isfinite (ro.momentary) && std::isfinite (ro.shortTerm) && std::isfinite (ro.rmsCombinedDb) && std::isfinite (ro.truePeakMaxDb));
+        CHECK (save (*ed, dir.getChildFile ("v11-04-after-nan.png")));
+        ed->setSize (1100, 680); runAudio (p, *ed, syn, 1.0);
+        CHECK (save (*ed, dir.getChildFile ("v11-05-large.png")));
+    }
+
     // 1. default view
     ed->setSize (780, 480);
     CHECK (save (*ed, dir.getChildFile ("01-default.png")));

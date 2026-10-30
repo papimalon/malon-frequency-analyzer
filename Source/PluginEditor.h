@@ -6,6 +6,7 @@
 #include "ui/SpectrumView.h"
 #include "ui/SettingsPanel.h"
 #include "ui/MeterStrip.h"
+#include "ui/HistoryPanel.h"
 
 namespace malon
 {
@@ -46,6 +47,8 @@ public:
     void applyAllSettings();
     void scrollSettingsTo (int y) { viewport.setViewPosition (0, y); }
     MeterStrip& getMeterStrip() noexcept { return strip; }
+    HistoryPanel& getHistory() noexcept { return history; }
+    SpectrumView& getView() noexcept { return view; }
     bool isMeterVisible() const noexcept { return strip.isVisible(); }
 
 private:
@@ -65,6 +68,9 @@ private:
     juce::Viewport viewport;
     juce::TextButton freezeButton { "Freeze" }, resetButton { "Reset" }, settingsButton { "Settings" }, aboutButton { "i" };
     MeterStrip strip;
+    HistoryPanel history;
+    juce::ComboBox channelBox;
+    std::unique_ptr<juce::ComboBoxParameterAttachment> channelAtt;
     juce::TextButton metersButton { "Meters" };
     std::unique_ptr<juce::ButtonParameterAttachment> metersAtt;
     double liveDb[2] = { -200.0, -200.0 };

@@ -1,5 +1,6 @@
 // Malon Frequency Analyzer - see FilterBank.h for licence and attribution.
 #include "FilterBank.h"
+#include "Sanitize.h"
 #include <algorithm>
 #include <thread>
 #include <vector>
@@ -171,6 +172,7 @@ void FilterBank::processImpl (const T* left, const T* right, int numSamples, Cha
     if (right == nullptr) right = left;
 
     double bufA[frameSize], bufB[frameSize];
+    auto S = [] (T v) noexcept { return sanitizeSample (double (v)); };
     int pos = 0;
     while (pos < numSamples)
     {
@@ -178,20 +180,25 @@ void FilterBank::processImpl (const T* left, const T* right, int numSamples, Cha
         switch (mode)
         {
             case ChannelMode::Left:
-                for (int i = 0; i < n; ++i) bufA[i] = double (left[pos + i]);
+                for (int i = 0; i < n; ++i) bufA[i] = S (left[pos + i]);
                 processFrame (bufA, nullptr, 1, n);
                 break;
             case ChannelMode::Right:
-                for (int i = 0; i < n; ++i) bufA[i] = double (right[pos + i]);
+                for (int i = 0; i < n; ++i) bufA[i] = S (right[pos + i]);
                 processFrame (bufA, nullptr, 1, n);
                 break;
             case ChannelMode::Mix:
-                for (int i = 0; i < n; ++i) bufA[i] = 0.5 * (double (left[pos + i]) + double (right[pos + i]));
+            case ChannelMode::Mid:          // mid = (L + R) / 2: what's in the centre
+                for (int i = 0; i < n; ++i) bufA[i] = 0.5 * (S (left[pos + i]) + S (right[pos + i]));
+                processFrame (bufA, nullptr, 1, n);
+                break;
+            case ChannelMode::Side:         // side = (L - R) / 2: what's only on the sides
+                for (int i = 0; i < n; ++i) bufA[i] = 0.5 * (S (left[pos + i]) - S (right[pos + i]));
                 processFrame (bufA, nullptr, 1, n);
                 break;
             case ChannelMode::Both:
             default:
-                for (int i = 0; i < n; ++i) { bufA[i] = double (left[pos + i]); bufB[i] = double (right[pos + i]); }
+                for (int i = 0; i < n; ++i) { bufA[i] = S (left[pos + i]); bufB[i] = S (right[pos + i]); }
                 processFrame (bufA, bufB, 2, n);
                 break;
         }

@@ -1,0 +1,12 @@
+MALON FREQUENCY ANALYZER - SOURCE CODE (GNU AGPL v3)
+
+This plugin is free software: you can redistribute it and/or modify it under the terms of the
+GNU Affero General Public License version 3 (or later). The full licence is in LICENSE.
+
+Complete corresponding source code:
+  https://github.com/papimalon/malon-frequency-analyzer
+  (version 1.1.0: tag v1.1.0)
+
+If that link stops working, MUSICA MALON will provide the source on request - contact via
+https://manymalon.com . Third-party parts (JUCE, AGPL-3.0; Seven Phases Spectrum Analyzer, MIT)
+are listed in THIRD_PARTY_NOTICES.md and LICENSE-SEVEN-PHASES-MIT.
