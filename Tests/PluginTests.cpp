@@ -315,34 +315,40 @@ static void screenshots (const File& dir)
     Synth syn;
     runAudio (p, *ed, syn, 5.0);
 
-    // v1.1: new default size, legend, hover read-out, level history + correlation, mid/side
+    // v1.1: view selector (spectrum / LUFS / RMS / peak history), legend, hover read-outs, correlation, mid/side
     {
-        ed->setSize (780, 600);
-        runAudio (p, *ed, syn, 6.0);
-        CHECK (ed->getHistory().isVisible());
+        ed->setSize (780, 500);
+        runAudio (p, *ed, syn, 11.0);
+        CHECK (ed->getViewMode() == 0 && ! ed->getHistory().isVisible());
         auto pa = ed->getView().getPlotArea();
         ed->getView().simulateHover ({ pa.getX() + pa.getWidth() * 0.42f, pa.getY() + pa.getHeight() * 0.45f });
-        CHECK (save (*ed, dir.getChildFile ("v11-01-default-hover.png")));
+        CHECK (save (*ed, dir.getChildFile ("v11-mode-1-spectrum.png")));
         ed->getView().simulateHover ({ -100.0f, -100.0f });
-        setParam (p, ids::historyMode, 1); runAudio (p, *ed, syn, 0.5);
-        CHECK (ed->getHistory().getMode() == 1 || true);
-        CHECK (save (*ed, dir.getChildFile ("v11-02-history-rms.png")));
-        setParam (p, ids::historyMode, 2); setParam (p, ids::channel, 5); runAudio (p, *ed, syn, 1.0);
-        CHECK (save (*ed, dir.getChildFile ("v11-03-side-peak-history.png")));
-        // NaN injection while the editor runs: the display must recover immediately
+        const char* names[3] = { "v11-mode-2-lufs.png", "v11-mode-3-rms.png", "v11-mode-4-peak.png" };
+        for (int m = 1; m <= 3; ++m)
+        {
+            setParam (p, ids::viewMode, (float) m); runAudio (p, *ed, syn, 0.3);
+            CHECK_MSG (ed->getViewMode() == m && ed->getHistory().isVisible() && ! ed->getView().isVisible() && ed->getHistory().getMode() == m - 1, "mode %d", m);
+            auto hp = ed->getHistory().getPlotArea();
+            ed->getHistory().simulateHover ({ hp.getX() + hp.getWidth() * 0.6f, hp.getY() + hp.getHeight() * 0.3f });
+            CHECK (save (*ed, dir.getChildFile (names[m - 1])));
+        }
+        // state round trip keeps the view mode
+        { MemoryBlock mb; p.getStateInformation (mb); MalonProcessor q; q.setStateInformation (mb.getData(), (int) mb.getSize());
+          CHECK (roundToInt (q.apvts.getRawParameterValue (ids::viewMode)->load()) == 3); }
+        setParam (p, ids::viewMode, 0); setParam (p, ids::channel, 5); runAudio (p, *ed, syn, 1.0);
+        CHECK (ed->getViewMode() == 0 && ed->getView().isVisible());
+        CHECK (save (*ed, dir.getChildFile ("v11-mode-1b-spectrum-side.png")));
         {
             AudioBuffer<float> b (2, 1536); b.clear();
             for (int i = 0; i < 1536; ++i) { b.setSample (0, i, std::nanf ("")); b.setSample (1, i, INFINITY); }
             MidiBuffer m; p.processBlock (b, m); ed->pollNow (32.0);
         }
-        setParam (p, ids::channel, 2); setParam (p, ids::historyMode, 0);
+        setParam (p, ids::channel, 2);
         runAudio (p, *ed, syn, 4.0);
         const auto ro = p.getMeter().read();
         std::printf ("  after NaN/inf block: M %.2f S %.2f RMS %.2f TP %.2f corr %.2f\n", ro.momentary, ro.shortTerm, ro.rmsCombinedDb, ro.truePeakMaxDb, ro.correlation);
         CHECK (std::isfinite (ro.momentary) && std::isfinite (ro.shortTerm) && std::isfinite (ro.rmsCombinedDb) && std::isfinite (ro.truePeakMaxDb));
-        CHECK (save (*ed, dir.getChildFile ("v11-04-after-nan.png")));
-        ed->setSize (1100, 680); runAudio (p, *ed, syn, 1.0);
-        CHECK (save (*ed, dir.getChildFile ("v11-05-large.png")));
     }
 
     // 1. default view

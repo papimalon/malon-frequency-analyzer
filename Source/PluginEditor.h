@@ -47,7 +47,8 @@ public:
     void applyAllSettings();
     void scrollSettingsTo (int y) { viewport.setViewPosition (0, y); }
     MeterStrip& getMeterStrip() noexcept { return strip; }
-    HistoryPanel& getHistory() noexcept { return history; }
+    HistoryView& getHistory() noexcept { return history; }
+    int getViewMode() const noexcept { return viewMode; }
     SpectrumView& getView() noexcept { return view; }
     bool isMeterVisible() const noexcept { return strip.isVisible(); }
 
@@ -68,7 +69,10 @@ private:
     juce::Viewport viewport;
     juce::TextButton freezeButton { "Freeze" }, resetButton { "Reset" }, settingsButton { "Settings" }, aboutButton { "i" };
     MeterStrip strip;
-    HistoryPanel history;
+    HistoryView history;
+    juce::TextButton modeButtons[4] { juce::TextButton ("SPECTRUM"), juce::TextButton ("LUFS"), juce::TextButton ("RMS"), juce::TextButton ("PEAK") };
+    int viewMode = -1;
+    void updateViewMode();
     juce::ComboBox channelBox;
     std::unique_ptr<juce::ComboBoxParameterAttachment> channelAtt;
     juce::TextButton metersButton { "Meters" };

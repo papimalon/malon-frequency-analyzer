@@ -49,7 +49,7 @@ AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // pro metering (true peak, RMS, loudness) - a separate, switchable section
     toggle ("meterOn", "Meters", true);
     choice ("rmsWindow", "RMS Window", { "100 ms", "300 ms", "1 s", "3 s" }, 1);
-    choice ("historyMode", "History", { "LUFS", "RMS", "Peak" }, 0);
+    choice ("viewMode", "View", { "Spectrum", "LUFS", "RMS", "Peak" }, 0);
 
     return l;
 }

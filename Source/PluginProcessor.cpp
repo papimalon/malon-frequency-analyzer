@@ -105,7 +105,7 @@ void MalonProcessor::setColors (const ColorScheme& c)
 
 Point<int> MalonProcessor::getSavedEditorSize() const
 {
-    return { (int) apvts.state.getProperty (kEdW, 780), (int) apvts.state.getProperty (kEdH, 600) };
+    return { (int) apvts.state.getProperty (kEdW, 780), (int) apvts.state.getProperty (kEdH, 500) };
 }
 void MalonProcessor::saveEditorSize (int w, int h)
 {

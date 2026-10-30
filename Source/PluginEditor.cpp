@@ -60,7 +60,7 @@ void AboutOverlay::mouseUp (const MouseEvent& e)
 // ---- Editor ----------------------------------------------------------------
 
 MalonEditor::MalonEditor (MalonProcessor& p)
-    : AudioProcessorEditor (&p), proc (p), content (p), strip (p), history (p)
+    : AudioProcessorEditor (&p), proc (p), content (p), strip (p)
 {
     setLookAndFeel (&laf);
     view.setData (&model);
@@ -83,6 +83,21 @@ MalonEditor::MalonEditor (MalonProcessor& p)
     metersButton.setTooltip ("Show the pro meters: true peak, RMS, loudness (M)");
     addChildComponent (strip);
     addChildComponent (history);
+    const char* modeTips[4] = { "Frequency spectrum", "Momentary loudness (LUFS) over the last 10 s",
+                                "RMS level over the last 10 s", "True peak over the last 10 s" };
+    for (int i = 0; i < 4; ++i)
+    {
+        auto& b = modeButtons[i];
+        b.setTooltip (modeTips[i]);
+        b.setConnectedEdges ((i > 0 ? Button::ConnectedOnLeft : 0) | (i < 3 ? Button::ConnectedOnRight : 0));
+        b.onClick = [this, i]
+        {
+            if (auto* prm = proc.apvts.getParameter (ids::viewMode))
+            { prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->convertTo0to1 ((float) i)); prm->endChangeGesture(); }
+            updateViewMode();
+        };
+        addAndMakeVisible (b);
+    }
     channelBox.addItemList ({ "Left", "Right", "Stereo", "Mix", "Mid", "Side" }, 1);
     channelBox.setTooltip ("What the spectrum shows: Left, Right, both (Stereo), L+R Mix, Mid (centre) or Side (stereo width)");
     addAndMakeVisible (channelBox);
@@ -159,13 +174,13 @@ void MalonEditor::resized()
     channelBox.setBounds (top.removeFromRight (90).reduced (0, 2));
 
     if (strip.isVisible())
-    {
         strip.setBounds (r.removeFromBottom (MeterStrip::preferredHeight));
-        const bool roomForHistory = r.getHeight() >= 190 + HistoryPanel::preferredHeight;
-        history.setVisible (roomForHistory);
-        if (roomForHistory) history.setBounds (r.removeFromBottom (HistoryPanel::preferredHeight));
+
+    {   // view selector, aligned with the plot's left edge
+        auto row = r.removeFromTop (28).withTrimmedLeft (8 + 36).withTrimmedBottom (4);
+        const int widths[4] = { 82, 56, 52, 56 };
+        for (int i = 0; i < 4; ++i) modeButtons[i].setBounds (row.removeFromLeft (widths[i]));
     }
-    else history.setVisible (false);
 
     if (settingsOpen)
     {
@@ -176,7 +191,8 @@ void MalonEditor::resized()
         content.resized();
         content.setSize (pr.getWidth() - viewport.getScrollBarThickness(), content.getContentHeight());
     }
-    view.setBounds (r.withTrimmedLeft (8).withTrimmedBottom (8).withTrimmedRight (settingsOpen ? 8 : 8));
+    view.setBounds (r.withTrimmedLeft (8).withTrimmedBottom (8).withTrimmedRight (8));
+    history.setBounds (view.getBounds());
     about.setBounds (getLocalBounds());
 
     if (getWidth() > 0) proc.saveEditorSize (getWidth(), getHeight());
@@ -256,6 +272,7 @@ void MalonEditor::applyAllSettings()
     view.setSettings (s);
     view.setColors (proc.getColors());
     updateMeterVisibility();
+    updateViewMode();
 }
 
 void MalonEditor::changeListenerCallback (ChangeBroadcaster*)
@@ -284,9 +301,21 @@ void MalonEditor::pollNow (double dtMs)
         strip.setReadout (ro, liveDb[0], liveDb[1]);
         const double pkMax = jmax (pk[0], pk[1]);
         const double pkDb = pkMax > 0.0 ? 20.0 * std::log10 (pkMax) : -std::numeric_limits<double>::infinity();
-        if (history.isVisible()) history.push (ro.momentary, ro.rmsCombinedDb, pkDb < -150.0 ? -std::numeric_limits<double>::infinity() : pkDb,
-                                               ro.correlationValid, ro.correlation);
+        if (! model.frozen) history.push (ro.momentary, ro.rmsCombinedDb, pkDb < -150.0 ? -std::numeric_limits<double>::infinity() : pkDb);
     }
+}
+
+void MalonEditor::updateViewMode()
+{
+    const int m = jlimit (0, 3, roundToInt (proc.apvts.getRawParameterValue (ids::viewMode)->load()));
+    history.setMetersOn (strip.isVisible());
+    if (m == viewMode) return;
+    viewMode = m;
+    for (int i = 0; i < 4; ++i) modeButtons[i].setToggleState (i == m, dontSendNotification);
+    view.setVisible (m == 0);
+    history.setVisible (m != 0);
+    if (m != 0) history.setMode (m - 1);
+    channelBox.setEnabled (m == 0);
 }
 
 void MalonEditor::timerCallback()

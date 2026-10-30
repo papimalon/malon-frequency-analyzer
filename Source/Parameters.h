@@ -27,7 +27,7 @@ namespace ids
     inline constexpr const char* bands        = "bands";
     inline constexpr const char* meterOn      = "meterOn";
     inline constexpr const char* rmsWindow    = "rmsWindow";
-    inline constexpr const char* historyMode  = "historyMode";
+    inline constexpr const char* viewMode     = "viewMode";
 }
 
 /** RMS window choices (ms), index = value of the "rmsWindow" parameter. */

@@ -5,185 +5,146 @@ namespace malon
 {
 using namespace juce;
 
-static constexpr float kTop = 0.0f, kBottom = -42.0f;       // graph range (dB / LUFS)
+static constexpr double kTop = 3.0, kBottom = -54.0;        // same feel as the spectrum's default 3 dB / 57 dB
 
-HistoryPanel::HistoryPanel (MalonProcessor& p) : proc (p)
+void HistoryView::clear()
 {
     for (auto& h : hist) h.fill (-std::numeric_limits<float>::infinity());
-    const char* tips[3] = { "Momentary loudness (LUFS, 400 ms) over the last 10 s",
-                            "RMS level (dBFS) over the last 10 s", "True peak (dBTP) over the last 10 s" };
-    for (int i = 0; i < 3; ++i)
-    {
-        auto& b = modeButtons[i];
-        b.setClickingTogglesState (false);
-        b.setTooltip (tips[i]);
-        b.setConnectedEdges ((i > 0 ? Button::ConnectedOnLeft : 0) | (i < 2 ? Button::ConnectedOnRight : 0));
-        b.onClick = [this, i]
-        {
-            if (auto* prm = proc.apvts.getParameter (ids::historyMode))
-            { prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->convertTo0to1 ((float) i)); prm->endChangeGesture(); }
-            setMode (i);
-        };
-        addAndMakeVisible (b);
-    }
-    proc.apvts.addParameterListener (ids::historyMode, this);
-    setMode ((int) proc.apvts.getRawParameterValue (ids::historyMode)->load());
-    setOpaque (false);
-}
-
-HistoryPanel::~HistoryPanel() { proc.apvts.removeParameterListener (ids::historyMode, this); }
-
-void HistoryPanel::parameterChanged (const String&, float v)
-{
-    const int m = jlimit (0, 2, roundToInt (v));
-    MessageManager::callAsync ([sp = SafePointer<HistoryPanel> (this), m] { if (sp) sp->setMode (m); });
-}
-
-void HistoryPanel::setMode (int m)
-{
-    mode = jlimit (0, 2, m);
-    for (int i = 0; i < 3; ++i)
-    {
-        modeButtons[i].setToggleState (i == mode, dontSendNotification);
-        modeButtons[i].setColour (TextButton::buttonOnColourId, palette::blue);
-    }
+    head = filled = 0;
     repaint();
 }
 
-void HistoryPanel::clear()
+void HistoryView::push (double lufsM, double rmsDb, double peakDb)
 {
-    for (auto& h : hist) h.fill (-std::numeric_limits<float>::infinity());
-    head = filled = 0; corrMin = 1.0;
-    repaint();
-}
-
-void HistoryPanel::push (double lufsM, double rmsDb, double peakDb, bool valid, double corr)
-{
-    const int m = jlimit (0, 2, roundToInt (proc.apvts.getRawParameterValue (ids::historyMode)->load()));
-    if (m != mode) setMode (m);           // follows host automation / state recall
     hist[0][(size_t) head] = (float) lufsM;
     hist[1][(size_t) head] = (float) rmsDb;
     hist[2][(size_t) head] = (float) peakDb;
     head = (head + 1) % kPoints;
     filled = jmin (filled + 1, kPoints);
-    corrValid = valid;
-    if (valid)
-    {
-        corrShown += 0.35 * (corr - corrShown);              // a little visual smoothing
-        corrMin = jmin (corrMin, corr);
-    }
-    repaint();
+    if (isVisible()) repaint();
 }
 
-void HistoryPanel::resized()
+float HistoryView::valueAt (int age) const
 {
-    auto r = getLocalBounds().reduced (16, 8);
-    corrArea = r.removeFromRight (jlimit (150, 220, r.getWidth() / 4));
-    r.removeFromRight (18);
-    auto sel = r.removeFromTop (20);
-    const int bw = 50;
-    for (int i = 0; i < 3; ++i) modeButtons[i].setBounds (sel.getX() + 70 + i * bw, sel.getY(), bw, 20);
-    r.removeFromTop (6);
-    graphArea = r;
+    if (age < 0 || age >= filled) return -std::numeric_limits<float>::infinity();
+    return hist[(size_t) mode][(size_t) ((head - 1 - age + 2 * kPoints) % kPoints)];
 }
 
-static String fmtDb (double v) { return std::isfinite (v) ? String (v, 1) : String ("-inf"); }
+Rectangle<float> HistoryView::getPlotArea() const
+{   // same margins as the spectrum, so switching modes doesn't jump
+    return getLocalBounds().toFloat().withTrimmedLeft (36.0f).withTrimmedRight (36.0f).withTrimmedTop (16.0f).withTrimmedBottom (24.0f);
+}
 
-void HistoryPanel::paint (Graphics& g)
+static String fmtDb (double v) { return std::isfinite (v) && v > -150.0 ? String (v, 1) : String ("-inf"); }
+
+void HistoryView::paint (Graphics& g)
 {
     using namespace palette;
-    g.setColour (hairline);
-    g.drawHorizontalLine (0, 12.0f, (float) getWidth() - 12.0f);
+    g.setGradientFill (ColourGradient (Colour (0xFF0B0D13), 0, 0, Colour (0xFF07080C), 0, (float) getHeight(), false));
+    g.fillAll();
+    const auto plot = getPlotArea();
+    if (plot.getWidth() < 40 || plot.getHeight() < 30) return;
 
-    // ---- header ----
-    g.setColour (dim);
-    g.setFont (uiFont (10.0f).withExtraKerningFactor (0.16f));
-    g.drawText ("HISTORY", graphArea.getX(), modeButtons[0].getY(), 66, 20, Justification::centredLeft, false);
+    auto yOf = [&] (double v) { return plot.getY() + plot.getHeight() * (float) ((kTop - jlimit (kBottom, kTop, v)) / (kTop - kBottom)); };
+    auto xOfAge = [&] (double ageTicks) { return plot.getRight() - plot.getWidth() * (float) (ageTicks / (kPoints - 1)); };
 
-    const auto& h = hist[(size_t) mode];
-    const float latest = filled > 0 ? h[(size_t) ((head - 1 + kPoints) % kPoints)] : -std::numeric_limits<float>::infinity();
-    const char* unit = mode == 0 ? "LUFS M" : mode == 1 ? "dBFS" : "dBTP";
-    g.setColour (text);
-    g.setFont (uiFont (12.0f, true));
-    g.drawText (fmtDb (latest) + "  " + unit, modeButtons[2].getRight() + 12, modeButtons[0].getY(),
-                graphArea.getRight() - modeButtons[2].getRight() - 12, 20, Justification::centredRight, false);
-
-    // ---- graph ----
-    auto gr = graphArea.toFloat();
-    g.setColour (Colour (0xFF0E1118));
-    g.fillRoundedRectangle (gr, 4.0f);
-    auto yOf = [&] (double v) { return gr.getY() + gr.getHeight() * (float) ((kTop - jlimit ((double) kBottom, (double) kTop, v)) / (kTop - kBottom)); };
-    g.setFont (uiFont (9.0f));
-    for (int lv : { -6, -12, -18, -24, -30, -36 })
+    // grid: 6 dB lines, 1 s lines
+    g.setFont (uiFont (10.5f));
+    for (int lv = 0; lv > kBottom; lv -= 6)
     {
         const float y = std::round (yOf (lv)) + 0.5f;
-        g.setColour (hairline);
-        g.drawHorizontalLine ((int) y, gr.getX() + 22.0f, gr.getRight());
-        g.setColour (dim.withAlpha (0.8f));
-        g.drawText (String (lv), Rectangle<float> (gr.getX() + 2.0f, y - 6.0f, 20.0f, 12.0f), Justification::centredLeft, false);
+        g.setColour (Colour (0x14FFFFFF));
+        g.drawHorizontalLine ((int) y, plot.getX(), plot.getRight());
+        g.setColour (dim);
+        g.drawText (String (lv), Rectangle<float> (0, y - 7, plot.getX() - 6, 14), Justification::centredRight, false);
+        g.drawText (String (lv), Rectangle<float> (plot.getRight() + 6, y - 7, 30, 14), Justification::centredLeft, false);
     }
-    if (mode == 0)    // EBU R128 target line
+    for (int s = 0; s <= (int) kSecondsShown; ++s)
     {
-        g.setColour (red.withAlpha (0.45f));
+        const float x = std::round (xOfAge (s * 31.0)) + 0.5f;
+        if (x < plot.getX()) break;
+        g.setColour (Colour (0x14FFFFFF));
+        g.drawVerticalLine ((int) x, plot.getY(), plot.getBottom());
+        g.setColour (dim);
+        g.drawText (s == 0 ? String ("now") : "-" + String (s) + "s", Rectangle<float> (x - 22, plot.getBottom() + 5, 44, 14), Justification::centred, false);
+    }
+    g.setColour (Colour (0x26FFFFFF));
+    g.drawRect (plot.expanded (0.5f), 1.0f);
+
+    const char* unit = mode == 0 ? "LUFS" : mode == 1 ? "dBFS" : "dBTP";
+    const char* title = mode == 0 ? "MOMENTARY LOUDNESS" : mode == 1 ? "RMS" : "TRUE PEAK";
+
+    Graphics::ScopedSaveState ss (g);
+    g.reduceClipRegion (plot.toNearestIntEdges());
+
+    if (mode == 0)    // EBU R128 target
+    {
         const float y = std::round (yOf (-23.0)) + 0.5f;
-        for (float x = gr.getX() + 22.0f; x < gr.getRight(); x += 6.0f) g.drawHorizontalLine ((int) y, x, jmin (x + 3.0f, gr.getRight()));
+        g.setColour (red.withAlpha (0.55f));
+        for (float x = plot.getX(); x < plot.getRight(); x += 8.0f) g.drawHorizontalLine ((int) y, x, jmin (x + 4.0f, plot.getRight()));
+        g.setFont (uiFont (9.5f));
+        g.drawText ("-23 LUFS", Rectangle<float> (plot.getX() + 8, y - 15, 70, 12), Justification::centredLeft, false);
     }
 
     if (filled > 1)
     {
-        const float x0 = gr.getX() + 22.0f, w = gr.getRight() - x0;
         Path line, fill;
-        bool started = false;
-        for (int i = 0; i < filled; ++i)
+        bool open = false;
+        for (int age = filled - 1; age >= 0; --age)
         {
-            const int idx = (head - filled + i + kPoints) % kPoints;
-            const float v = h[(size_t) idx];
-            const float x = x0 + w * (float) (kPoints - filled + i) / (float) (kPoints - 1);
-            const float y = std::isfinite (v) ? yOf (v) : gr.getBottom();
-            if (! started) { line.startNewSubPath (x, y); fill.startNewSubPath (x, gr.getBottom()); fill.lineTo (x, y); started = true; }
+            const float v = valueAt (age);
+            const float x = xOfAge (age), y = std::isfinite (v) ? yOf (v) : plot.getBottom() + 2.0f;
+            if (! open) { line.startNewSubPath (x, y); fill.startNewSubPath (x, plot.getBottom() + 2.0f); fill.lineTo (x, y); open = true; }
             else { line.lineTo (x, y); fill.lineTo (x, y); }
-            if (i == filled - 1) { fill.lineTo (x, gr.getBottom()); fill.closeSubPath(); }
         }
-        Graphics::ScopedSaveState ss (g);
-        g.reduceClipRegion (gr.toNearestInt());
-        g.setGradientFill (ColourGradient (blue.withAlpha (0.28f), 0, gr.getY(), blue.withAlpha (0.0f), 0, gr.getBottom(), false));
+        fill.lineTo (plot.getRight(), plot.getBottom() + 2.0f); fill.closeSubPath();
+        g.setGradientFill (ColourGradient (blue.withAlpha (0.32f), 0, plot.getY(), blue.withAlpha (0.02f), 0, plot.getBottom(), false));
         g.fillPath (fill);
-        g.setColour (blue.brighter (0.25f));
-        g.strokePath (line, PathStrokeType (1.5f, PathStrokeType::curved, PathStrokeType::rounded));
+        g.setColour (blue.brighter (0.3f));
+        g.strokePath (line, PathStrokeType (1.75f, PathStrokeType::curved, PathStrokeType::rounded));
     }
 
-    // ---- correlation ----
-    {
-        auto c = corrArea;
-        g.setColour (dim);
-        g.setFont (uiFont (10.0f).withExtraKerningFactor (0.16f));
-        g.drawText ("CORRELATION", c.removeFromTop (20), Justification::centredLeft, false);
-        c.removeFromTop (6);
-        const double v = corrValid ? corrShown : 0.0;
-        g.setColour (corrValid ? (v < 0.0 ? red : text) : dim);
-        g.setFont (uiFont (22.0f, true));
-        g.drawText (corrValid ? (v >= 0 ? "+" : "") + String (v, 2) : String ("--"), c.removeFromTop (26), Justification::centredLeft, false);
+    // title + latest value, top left (where the spectrum has its legend)
+    g.setColour (dim);
+    g.setFont (uiFont (9.5f).withExtraKerningFactor (0.12f));
+    g.drawText (title, Rectangle<float> (plot.getX() + 10, plot.getY() + 7, 200, 12), Justification::centredLeft, false);
+    g.setColour (text);
+    g.setFont (uiFont (20.0f, true));
+    g.drawText (fmtDb (valueAt (0)) + " " + unit, Rectangle<float> (plot.getX() + 10, plot.getY() + 20, 240, 26), Justification::centredLeft, false);
 
-        auto bar = Rectangle<float> ((float) c.getX(), (float) c.getY() + 6.0f, (float) c.getWidth(), 4.0f);
-        auto toX = [&] (double x) { return bar.getX() + bar.getWidth() * (float) ((jlimit (-1.0, 1.0, x) + 1.0) * 0.5); };
-        g.setColour (Colour (0xFF1B1F2A));
-        g.fillRoundedRectangle (bar, 2.0f);
-        g.setColour (text.withAlpha (0.35f));
-        g.fillRect (toX (0.0), bar.getY() - 2.0f, 1.0f, bar.getHeight() + 4.0f);
-        if (corrValid)
+    if (! metersOn)
+    {
+        g.setColour (dim);
+        g.setFont (uiFont (13.0f));
+        g.drawText ("Turn on Meters (M) to record level history", plot, Justification::centred, false);
+    }
+
+    // hover: time + level at that time
+    if (hasMouse && plot.contains (mouse))
+    {
+        const int age = jlimit (0, kPoints - 1, roundToInt ((plot.getRight() - mouse.x) / plot.getWidth() * (kPoints - 1)));
+        const float v = valueAt (age), x = xOfAge (age);
+        g.setColour (Colours::white.withAlpha (0.35f));
+        g.drawVerticalLine ((int) x, plot.getY(), plot.getBottom());
+        if (std::isfinite (v) && v > kBottom)
         {
-            const float xv = toX (v), xc = toX (0.0);
-            g.setColour (v < 0.0 ? red : blue);
-            g.fillRoundedRectangle (Rectangle<float> (jmin (xv, xc), bar.getY(), jmax (2.0f, std::abs (xv - xc)), bar.getHeight()), 2.0f);
-            g.setColour (text);
-            g.fillRect (xv - 1.0f, bar.getY() - 3.0f, 2.0f, bar.getHeight() + 6.0f);
+            g.setColour (Colours::white);
+            g.fillEllipse (x - 3.5f, yOf (v) - 3.5f, 7.0f, 7.0f);
         }
-        g.setColour (dim.withAlpha (0.8f));
-        g.setFont (uiFont (9.0f));
-        auto lab = Rectangle<float> (bar.getX(), bar.getBottom() + 4.0f, bar.getWidth(), 11.0f);
-        g.drawText ("-1", lab, Justification::centredLeft, false);
-        g.drawText ("0", lab, Justification::centred, false);
-        g.drawText ("+1", lab, Justification::centredRight, false);
+        const String t = age == 0 ? String ("now") : "-" + String (age / 31.0, 1) + " s";
+        const String txt = t + "    " + fmtDb (v) + " " + unit;
+        const float w = 150.0f, h = 22.0f;
+        float bx = mouse.x + 14.0f, by = mouse.y + 14.0f;
+        if (bx + w > plot.getRight() - 4.0f) bx = mouse.x - 14.0f - w;
+        if (by + h > plot.getBottom() - 4.0f) by = mouse.y - 14.0f - h;
+        auto r = Rectangle<float> (bx, by, w, h);
+        g.setColour (Colour (0xF00C0E14));
+        g.fillRoundedRectangle (r, 5.0f);
+        g.setColour (Colours::white.withAlpha (0.12f));
+        g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
+        g.setColour (Colours::white.withAlpha (0.95f));
+        g.setFont (uiFont (11.0f, true));
+        g.drawText (txt, r, Justification::centred, false);
     }
 }
 

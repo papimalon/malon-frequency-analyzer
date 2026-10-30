@@ -161,6 +161,33 @@ void MeterStrip::paint (Graphics& g)
         }
     }
 
+    // ---- stereo correlation (under the reset button) ----
+    {
+        auto c = Rectangle<int> (l.ctl.getX(), l.ctl.getY() + 58, l.ctl.getWidth(), 14);
+        g.setColour (dim);
+        g.setFont (uiFont (9.0f).withExtraKerningFactor (0.14f));
+        g.drawText ("CORR", c, Justification::centredLeft, false);
+        const bool ok = ro.correlationValid && stereo;
+        const double v = ok ? ro.correlation : 0.0;
+        g.setColour (ok ? (v < 0.0 ? red : text) : dim);
+        g.setFont (uiFont (12.0f, true));
+        g.drawText (ok ? (v >= 0.0 ? "+" : "") + String (v, 2) : String ("--"), c, Justification::centredRight, false);
+        auto bar = Rectangle<float> ((float) c.getX(), (float) c.getBottom() + 5.0f, (float) c.getWidth(), 3.0f);
+        auto toX = [&] (double x) { return bar.getX() + bar.getWidth() * (float) ((jlimit (-1.0, 1.0, x) + 1.0) * 0.5); };
+        g.setColour (Colour (0xFF1B1F2A));
+        g.fillRoundedRectangle (bar, 1.5f);
+        g.setColour (text.withAlpha (0.35f));
+        g.fillRect (toX (0.0), bar.getY() - 2.0f, 1.0f, bar.getHeight() + 4.0f);
+        if (ok)
+        {
+            const float xv = toX (v), xc = toX (0.0);
+            g.setColour (v < 0.0 ? red : blue);
+            g.fillRoundedRectangle (Rectangle<float> (jmin (xv, xc), bar.getY(), jmax (2.0f, std::abs (xv - xc)), bar.getHeight()), 1.5f);
+            g.setColour (text);
+            g.fillRect (xv - 1.0f, bar.getY() - 2.0f, 2.0f, bar.getHeight() + 4.0f);
+        }
+    }
+
     // ---- clip light ----
     {
         const float d = 10.0f;
