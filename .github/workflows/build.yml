@@ -123,7 +123,7 @@ jobs:
           cp LICENSE LICENSE-SEVEN-PHASES-MIT THIRD_PARTY_NOTICES.md docs/SOURCE.txt dist/
           cp -R "$A/VST3" dist/
           # linker leftovers (.exp / .lib) are not part of the plugin
-          find dist/VST3 -maxdepth 1 -type f \( -name '*.exp' -o -name '*.lib' -o -name '*.pdb' \) -delete
+          find dist -type f \( -name '*.exp' -o -name '*.lib' -o -name '*.pdb' -o -name '*.ilk' \) -delete
           if [ -d "$A/AU" ]; then cp -R "$A/AU" dist/; fi
           case "${{ runner.os }}" in
             Windows) cp docs/INSTALL-Windows.txt dist/INSTALL.txt ;;
@@ -131,6 +131,13 @@ jobs:
                      for b in dist/VST3/*.vst3/Contents/MacOS/* dist/AU/*.component/Contents/MacOS/*; do lipo -archs "$b" | tee -a dist/ARCHITECTURES.txt; done ;;
             *)       cp README.md dist/ ;;
           esac
+          # sanity: notes present, no linker leftovers, version in SOURCE.txt matches the build
+          test -f dist/SOURCE.txt && test -f dist/LICENSE
+          if [ "${{ runner.os }}" != "Linux" ]; then test -f dist/INSTALL.txt; fi
+          if find dist -type f \( -name '*.exp' -o -name '*.lib' -o -name '*.pdb' \) | grep -q .; then echo "linker leftovers in dist" >&2; exit 1; fi
+          V=$(sed -n 's/^set(MALON_VERSION \(.*\))$/\1/p' CMakeLists.txt)
+          grep -q "tag v$V" dist/SOURCE.txt || { echo "SOURCE.txt does not name tag v$V" >&2; exit 1; }
+          if [[ "${{ github.ref }}" == refs/tags/v* ]] && [ "${{ github.ref_name }}" != "v$V" ]; then echo "tag ${{ github.ref_name }} != v$V" >&2; exit 1; fi
           cd dist && cmake -E tar cf "../${{ matrix.artifact }}.zip" --format=zip .
 
       - uses: actions/upload-artifact@v4

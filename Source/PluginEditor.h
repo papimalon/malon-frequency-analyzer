@@ -72,6 +72,8 @@ private:
     HistoryView history;
     juce::TextButton modeButtons[4] { juce::TextButton ("SPECTRUM"), juce::TextButton ("LUFS"), juce::TextButton ("RMS"), juce::TextButton ("PEAK") };
     int viewMode = -1;
+    juce::TextButton hiResButton { "HI-RES" };
+    void updateHiResButton();
     void updateViewMode();
     juce::ComboBox channelBox;
     std::unique_ptr<juce::ComboBoxParameterAttachment> channelAtt;

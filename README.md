@@ -6,7 +6,7 @@ instant attack and tidy low-frequency resolution, like a classic hardware RTA.
 
 * **Peak**, **peak hold** and **average** shown at the same time
 * Each of hold and average as **bars**, **curve** or **curve fill**
-* Bands per octave: 3 / 4 / 6 (30 / 40 / 60 bands), any sample rate (22.05 kHz - 192 kHz tested)
+* Bands per octave: 3 / 4 / 6 (30 / 40 / 60 bands), plus Hi-Res 12 / 24 (HI-RES button) that separates kicks, 808 notes and close tones, any sample rate (22.05 kHz - 192 kHz tested)
 * Ballistics: peak decay 1-60 dB/s, average time 100-20 000 ms, hold time / infinite / decay
 * Channel: left / right / both / mix. Level ceiling, range, grid. Decade or octave frequency grid
 * Average slope: -6 ... +12 dB/oct tilt (pivot at the middle of the range)

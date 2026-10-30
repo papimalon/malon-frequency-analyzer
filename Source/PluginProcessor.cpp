@@ -26,7 +26,7 @@ bool MalonProcessor::isBusesLayoutSupported (const BusesLayout& l) const
     return in == out && (in == AudioChannelSet::stereo() || in == AudioChannelSet::mono());
 }
 
-static int bpoFromIndex (int i) { static const int v[] = { 3, 4, 6 }; return v[jlimit (0, 2, i)]; }
+static int bpoFromIndex (int i) { static const int v[] = { 3, 4, 6, 12, 24 }; return v[jlimit (0, 4, i)]; }
 
 void MalonProcessor::prepareToPlay (double sampleRate, int)
 {

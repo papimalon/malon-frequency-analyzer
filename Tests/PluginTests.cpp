@@ -127,10 +127,10 @@ static void testEndToEnd()
     std::printf ("[end-to-end] 1 kHz tone through the processor shows up in the 1 kHz band; bands/octave switch\n");
     MalonProcessor::useUserDefault() = false;
     MalonProcessor p; p.setPlayConfigDetails (2, 2, 48000, 480); p.prepareToPlay (48000, 480);
-    for (int bpoIdx : { 2, 1, 0, 2 })
+    for (int bpoIdx : { 2, 1, 0, 3, 4, 2 })
     {
         setParam (p, ids::bands, (float) bpoIdx);
-        const double bpo = bpoIdx == 0 ? 3 : bpoIdx == 1 ? 4 : 6;
+        const double bpo = bpoIdx == 0 ? 3 : bpoIdx == 1 ? 4 : bpoIdx == 2 ? 6 : bpoIdx == 3 ? 12 : 24;
         Readout r;
         double ph = 0;
         for (int blk = 0; blk < 60; ++blk)
@@ -264,7 +264,13 @@ struct Synth
         const double bass = 0.18 * std::sin (2 * 3.14159265358979 * 55.0 * t) + 0.07 * std::sin (2 * 3.14159265358979 * 110.0 * t);
         const double lead = 0.06 * std::sin (2 * 3.14159265358979 * 880.0 * t) + 0.04 * std::sin (2 * 3.14159265358979 * 2637.0 * t);
         const double hat = (std::fmod (t, 0.25) < 0.04) ? 0.12 * nd (rng) * (1.0 - std::fmod (t, 0.25) / 0.04) : 0.0;
-        return (float) (pink + kick + bass + lead + hat);
+        // song-like dynamics: an 8-bar phrase where the drums drop out for a 2 s breakdown and the
+        // mix swells, so the LUFS / RMS / peak histories move like real music, not a flat line
+        const double phrase = std::fmod (t, 8.0);
+        const bool breakdown = phrase >= 6.0;
+        const double swell = 0.75 + 0.25 * std::sin (2 * 3.14159265358979 * t / 8.0);
+        const double drums = breakdown ? 0.0 : 1.0;
+        return (float) (swell * (pink * (breakdown ? 0.5 : 1.0) + drums * (kick + hat) + bass + lead));
     }
 };
 
@@ -323,6 +329,12 @@ static void screenshots (const File& dir)
         auto pa = ed->getView().getPlotArea();
         ed->getView().simulateHover ({ pa.getX() + pa.getWidth() * 0.42f, pa.getY() + pa.getHeight() * 0.45f });
         CHECK (save (*ed, dir.getChildFile ("v11-mode-1-spectrum.png")));
+        // Hi-Res (24 bands/octave): kick fundamental, 55 Hz bass and its 110 Hz harmonic resolve as separate peaks
+        setParam (p, ids::bands, 4); runAudio (p, *ed, syn, 4.0);
+        CHECK (ed->getModel().numBands > 200);
+        ed->getView().simulateHover ({ pa.getX() + pa.getWidth() * 0.17f, pa.getY() + pa.getHeight() * 0.30f });
+        CHECK (save (*ed, dir.getChildFile ("v11-mode-1c-spectrum-hires.png")));
+        setParam (p, ids::bands, 2); runAudio (p, *ed, syn, 2.0);
         ed->getView().simulateHover ({ -100.0f, -100.0f });
         const char* names[3] = { "v11-mode-2-lufs.png", "v11-mode-3-rms.png", "v11-mode-4-peak.png" };
         for (int m = 1; m <= 3; ++m)

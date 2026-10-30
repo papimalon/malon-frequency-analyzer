@@ -2,6 +2,7 @@
 // Own drawing code. Band layout / grid frequencies follow the original analyzer's behaviour
 // (bars evenly spaced = log-frequency, decade or octave grid); art and colours are ours.
 #include "SpectrumView.h"
+#include "TooltipPlacement.h"
 #include "MalonLookAndFeel.h"
 
 namespace malon
@@ -224,10 +225,18 @@ void SpectrumView::paint (Graphics& g)
         if (levels.isNotEmpty()) lines.add (levels.trimEnd() + " dB");
 
         const float w = 232.0f, h = 8.0f + 15.0f * (float) lines.size();
-        float bx = mouse.x + 14.0f, by = mouse.y + 14.0f;
-        if (bx + w > plot.getRight() - 4.0f) bx = mouse.x - 14.0f - w;
-        if (by + h > plot.getBottom() - 4.0f) by = mouse.y - 14.0f - h;
-        auto r = Rectangle<float> (bx, by, w, h);
+        // keep the box off the traces: find the top of whatever is drawn under each x
+        auto traceTop = [&] (float x)
+        {
+            const int b = juce::jlimit (0, n - 1, (int) ((x - plot.getX()) / slot));
+            double top = -1e9;
+            if (settings.peakOn) top = juce::jmax (top, model->peak[b]);
+            if (settings.holdOn) top = juce::jmax (top, model->hold[b]);
+            if (settings.avgOn)  top = juce::jmax (top, model->avg[b]);
+            return top < -1e8 ? plot.getBottom() + 10.0f : levelToY (juce::jlimit (-400.0, 400.0, top), plot);
+        };
+        const auto legendArea = Rectangle<float> (plot.getX(), plot.getY(), 260.0f, 22.0f);
+        auto r = placeReadout (mouse, w, h, plot, traceTop, legendArea);
         g.setColour (Colour (0xF00C0E14));
         g.fillRoundedRectangle (r, 5.0f);
         g.setColour (Colours::white.withAlpha (0.12f));

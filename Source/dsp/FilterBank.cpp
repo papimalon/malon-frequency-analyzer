@@ -60,6 +60,8 @@ void FilterBank::prepare (double sampleRate, int bandsPerOctave)
         case 3: ferr = 0.904; break;
         case 4: ferr = 0.905; break;
         case 6: ferr = 0.909; break;
+        case 12: ferr = 0.910; break;   // Hi-Res: calibrated so band centres read 0 dB up to ~20 kHz
+        case 24: ferr = 0.908; break;
         default: break;
     }
 

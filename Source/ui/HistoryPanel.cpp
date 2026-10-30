@@ -1,5 +1,6 @@
 // Malon Frequency Analyzer - Copyright (C) 2026 MUSICA MALON, AGPL-3.0-or-later (see LICENSE)
 #include "HistoryPanel.h"
+#include "TooltipPlacement.h"
 
 namespace malon
 {
@@ -82,8 +83,6 @@ void HistoryView::paint (Graphics& g)
         const float y = std::round (yOf (-23.0)) + 0.5f;
         g.setColour (red.withAlpha (0.55f));
         for (float x = plot.getX(); x < plot.getRight(); x += 8.0f) g.drawHorizontalLine ((int) y, x, jmin (x + 4.0f, plot.getRight()));
-        g.setFont (uiFont (9.5f));
-        g.drawText ("-23 LUFS", Rectangle<float> (plot.getX() + 8, y - 15, 70, 12), Justification::centredLeft, false);
     }
 
     if (filled > 1)
@@ -102,6 +101,41 @@ void HistoryView::paint (Graphics& g)
         g.fillPath (fill);
         g.setColour (blue.brighter (0.3f));
         g.strokePath (line, PathStrokeType (1.75f, PathStrokeType::curved, PathStrokeType::rounded));
+    }
+
+    if (mode == 0)    // "-23 LUFS" label: on a background, at the first spot along the line the curve doesn't touch
+    {
+        const float y = std::round (yOf (-23.0)) + 0.5f;
+        const float lw = 58.0f, lh = 13.0f;
+        auto clearOfCurve = [&] (Rectangle<float> r)
+        {
+            for (float px = r.getX() - 2.0f; px <= r.getRight() + 2.0f; px += 1.0f)
+            {
+                const int a = roundToInt ((plot.getRight() - px) / plot.getWidth() * (kPoints - 1));
+                const float v = valueAt (a);
+                if (! std::isfinite (v)) continue;
+                const float cy = yOf (v);
+                if (cy > r.getY() - 3.0f && cy < r.getBottom() + 3.0f) return false;   // the line passes through
+            }
+            return true;
+        };
+        const float xs[] = { plot.getRight() - lw - 6.0f, plot.getX() + 0.5f * plot.getWidth() - 0.5f * lw, plot.getX() + 0.28f * plot.getWidth() };
+        Rectangle<float> best (xs[0], y - lh - 3.0f, lw, lh);
+        bool found = false;
+        for (float lx : xs)
+        {
+            for (float ly : { y - lh - 3.0f, y + 3.0f })
+            {
+                Rectangle<float> r (lx, ly, lw, lh);
+                if (clearOfCurve (r)) { best = r; found = true; break; }
+            }
+            if (found) break;
+        }
+        g.setColour (Colour (0xE00B0D13));
+        g.fillRoundedRectangle (best, 3.0f);
+        g.setColour (red.withAlpha (0.9f));
+        g.setFont (uiFont (9.5f, true));
+        g.drawText ("-23 LUFS", best, Justification::centred, false);
     }
 
     // title + latest value, top left (where the spectrum has its legend)
@@ -134,10 +168,15 @@ void HistoryView::paint (Graphics& g)
         const String t = age == 0 ? String ("now") : "-" + String (age / 31.0, 1) + " s";
         const String txt = t + "    " + fmtDb (v) + " " + unit;
         const float w = 150.0f, h = 22.0f;
-        float bx = mouse.x + 14.0f, by = mouse.y + 14.0f;
-        if (bx + w > plot.getRight() - 4.0f) bx = mouse.x - 14.0f - w;
-        if (by + h > plot.getBottom() - 4.0f) by = mouse.y - 14.0f - h;
-        auto r = Rectangle<float> (bx, by, w, h);
+        auto traceTop = [&] (float px)
+        {   // the line and its fill: highest point over the ~1 px of history under px
+            const int a = roundToInt ((plot.getRight() - px) / plot.getWidth() * (kPoints - 1));
+            float top = plot.getBottom() + 10.0f;
+            for (int k = a - 1; k <= a + 1; ++k) { const float vv = valueAt (k); if (std::isfinite (vv)) top = jmin (top, yOf (vv)); }
+            return top;
+        };
+        const auto titleArea = Rectangle<float> (plot.getX(), plot.getY(), 250.0f, 50.0f);
+        auto r = placeReadout (mouse, w, h, plot, traceTop, titleArea);
         g.setColour (Colour (0xF00C0E14));
         g.fillRoundedRectangle (r, 5.0f);
         g.setColour (Colours::white.withAlpha (0.12f));

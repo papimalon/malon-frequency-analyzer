@@ -98,6 +98,17 @@ MalonEditor::MalonEditor (MalonProcessor& p)
         };
         addAndMakeVisible (b);
     }
+    hiResButton.setClickingTogglesState (true);
+    hiResButton.setTooltip ("High resolution: 24 bands per octave, so kicks, 808 notes and close tones show as separate peaks");
+    hiResButton.onClick = [this]
+    {
+        if (auto* prm = proc.apvts.getParameter (ids::bands))
+        {
+            const float idx = hiResButton.getToggleState() ? 4.0f : 2.0f;   // 24 bpo or the default 6 bpo
+            prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->convertTo0to1 (idx)); prm->endChangeGesture();
+        }
+    };
+    addAndMakeVisible (hiResButton);
     channelBox.addItemList ({ "Left", "Right", "Stereo", "Mix", "Mid", "Side" }, 1);
     channelBox.setTooltip ("What the spectrum shows: Left, Right, both (Stereo), L+R Mix, Mid (centre) or Side (stereo width)");
     addAndMakeVisible (channelBox);
@@ -180,6 +191,7 @@ void MalonEditor::resized()
         auto row = r.removeFromTop (28).withTrimmedLeft (8 + 36).withTrimmedBottom (4);
         const int widths[4] = { 82, 56, 52, 56 };
         for (int i = 0; i < 4; ++i) modeButtons[i].setBounds (row.removeFromLeft (widths[i]));
+        hiResButton.setBounds (row.removeFromRight (64 + 8).withTrimmedRight (8));
     }
 
     if (settingsOpen)
@@ -305,8 +317,15 @@ void MalonEditor::pollNow (double dtMs)
     }
 }
 
+void MalonEditor::updateHiResButton()
+{
+    const bool hi = roundToInt (proc.apvts.getRawParameterValue (ids::bands)->load()) >= 3;
+    if (hiResButton.getToggleState() != hi) hiResButton.setToggleState (hi, dontSendNotification);
+}
+
 void MalonEditor::updateViewMode()
 {
+    updateHiResButton();
     const int m = jlimit (0, 3, roundToInt (proc.apvts.getRawParameterValue (ids::viewMode)->load()));
     history.setMetersOn (strip.isVisible());
     if (m == viewMode) return;
@@ -316,6 +335,7 @@ void MalonEditor::updateViewMode()
     history.setVisible (m != 0);
     if (m != 0) history.setMode (m - 1);
     channelBox.setEnabled (m == 0);
+    hiResButton.setVisible (m == 0);
 }
 
 void MalonEditor::timerCallback()

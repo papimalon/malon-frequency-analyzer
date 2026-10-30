@@ -44,7 +44,9 @@ AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     number ("range", "Range", 10, 120, 1, 51, "dB");
     number ("grid", "Grid", 2, 12, 1, 5, "dB");
     choice ("freqGrid", "Frequency Grid", { "Decade", "Octave" }, 0);
-    choice ("bands", "Bands per Octave", { "3", "4", "6" }, 2);
+    // 12 / 24 = Hi-Res: narrow bands that separate kicks, 808 notes and close tones (1000 vs 1050 Hz).
+    // Appended at the end so saved sessions keep their old choice.
+    choice ("bands", "Bands per Octave", { "3", "4", "6", "12 (Hi-Res)", "24 (Hi-Res)" }, 2);
 
     // pro metering (true peak, RMS, loudness) - a separate, switchable section
     toggle ("meterOn", "Meters", true);
