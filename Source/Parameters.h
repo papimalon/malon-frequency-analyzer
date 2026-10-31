@@ -28,10 +28,15 @@ namespace ids
     inline constexpr const char* meterOn      = "meterOn";
     inline constexpr const char* rmsWindow    = "rmsWindow";
     inline constexpr const char* viewMode     = "viewMode";
+    inline constexpr const char* slope        = "slope";
 }
 
 /** RMS window choices (ms), index = value of the "rmsWindow" parameter. */
 inline constexpr int kRmsWindowsMs[4] = { 100, 300, 1000, 3000 };
+/** "rmsWindow" index 4 = Integrated: power since the last reset / playback start (SPAN's Statistics "RMS"). */
+inline constexpr int kRmsIntegratedIndex = 4;
+/** Spectrum slope choices in dB/octave (pivot 1 kHz), index = value of the "slope" parameter. */
+inline constexpr double kSlopes[3] = { 0.0, 3.0, 4.5 };
 
 enum class ShowAs { Bars = 0, Curve = 1, CurveFill = 2 };
 

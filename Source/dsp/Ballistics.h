@@ -19,6 +19,7 @@ inline double gainToDb (double v) { return 20.0 * std::log10 (v); }
 inline double dbToGain (double v) { return std::pow (10.0, v / 20.0); }
 
 constexpr double kInfEdgeDb = -200.0;
+constexpr double kAvgSilenceDb = -150.0;
 
 /** Peak with constant dB/s decay + hold with time, then constant dB/s decay (or infinite). */
 struct Meter
@@ -75,7 +76,7 @@ public:
         resize (newSize);
         push (in);
         while (count > size) sum -= pop();
-        return (sum > inf * size * 10000.0) ? sum / size : inf;
+        return (count > 0 && sum > inf * count * 10000.0) ? sum / count : inf;
     }
 
     void clear() { head = 0; count = 0; sum = 0.0; }
@@ -89,7 +90,7 @@ private:
         newSize = std::max (1, std::min (newSize, cap - 2));
         if (newSize < size)
             while (count > newSize) sum -= pop();
-        else if (newSize > size)
+        else if (newSize > size && count > 0)
         {
             const double current = (count > 0) ? sum / count : 0.0;
             while (count < newSize) push (current);
@@ -113,7 +114,8 @@ struct DisplaySettings
     bool   holdInfinite = false;
     double holdTimeMs = 2000.0;
     double holdDecay = 3.0;      // dB/s
-    double avgSlope = 0.0;       // dB per octave, pivot at the middle of the range
+    double avgSlope = 0.0;       // extra dB/oct on the average only (legacy), pivot 1 kHz
+    double slope = 4.5;          // SPAN-equivalent spectrum slope in dB/oct, pivot 1 kHz (peak, hold, average)
 };
 
 /** Turns raw Readouts into the dB values that are drawn. UI thread only. */
@@ -144,7 +146,6 @@ public:
         mo.holdTimeMs = s.holdTimeMs;
         mo.holdDecayDbPerSec = s.holdDecay;
 
-        const double scale = r.samples > 0 ? 1.0 / r.samples : 0.0;
         const int    size  = int (s.avgTimeMs / nominalPollMs);
         const double bpo   = r.bandsPerOctave > 0 ? r.bandsPerOctave : 6.0;
 
@@ -154,29 +155,32 @@ public:
             const double pk = 0.5 * gainToDb (r.peakSq[i + 1] + inf);          // amplitude dB
             meters[i].tick (pk, dtMs, mo);
 
-            // No new audio since the last poll (e.g. host paused): keep the average as it is
-            // instead of averaging in a fake silent slot.
-            if (r.samples > 0)
-            {
-                const double ms = r.sumSq[i + 1] * scale;                        // mean square
-                lastAvgDb[i] = gainToDb (avgFilters[i].tick (ms, inf, size));    // 20log10(mean square)
-            }
-            // +3 dB so that a sine reads its peak amplitude (mean square of a sine = A^2/2)
-            const double tilt = s.avgSlope * (double (i) - 0.5 * numBands) / bpo;
-            avg[i] = 3.0 + 0.5 * lastAvgDb[i] + tilt;
-
-            peak[i] = meters[i].peak;
-            hold[i] = meters[i].hold;
+            // Average = long-term mean of the bars themselves (dB domain, over avgTime).
+            // v1.0 averaged the band's mean-square power instead. Bars are peak envelopes with a
+            // slow decay, so on music (crest factor 10-25 dB in narrow high bands) the power average
+            // sat 10-25 dB under the bars. Averaging the bar value keeps the line where the bars live.
+            // Silent polls (bar below -150 dB) are skipped so pauses don't drag a dB-domain mean down;
+            // until the window has filled, the mean is over what has arrived (no ramp up from -200 dB).
+            if (r.samples > 0 && meters[i].peak > kAvgSilenceDb)
+                lastAvgDb[i] = kInfEdgeDb + avgFilters[i].tick (meters[i].peak - kInfEdgeDb, 1.0e-12, size);
+            // Tilt, pivot 1 kHz, band centre f_i = freqMin * 2^(i / bpo). The slope is SPAN-equivalent:
+            // SPAN is an FFT (constant-Hz bins), where pink noise falls 3 dB/oct at slope 0 and is flat at 3.
+            // Our bands are constant-Q (1/6 oct), where pink noise is already flat, so we tilt by (slope - 3).
+            // Result: a mix looks the same as in SPAN at the same slope setting.
+            const double oct = std::log2 (r.freqMin / 1000.0) + double (i) / bpo;
+            const double tilt = (s.slope - 3.0) * oct;
+            avg[i] = lastAvgDb[i] + tilt + s.avgSlope * oct;
+            peak[i] = meters[i].peak + tilt;
+            hold[i] = meters[i].hold + tilt;
         }
     }
-
     void reset()
     {
         for (int i = 0; i < kMaxBands; ++i)
         {
             meters[i].reset(); avgFilters[i].clear();
             peak[i] = hold[i] = avg[i] = kInfEdgeDb;
-            lastAvgDb[i] = 2.0 * kInfEdgeDb;   // mean-square domain
+            lastAvgDb[i] = kInfEdgeDb;
         }
     }
 

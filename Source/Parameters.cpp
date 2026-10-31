@@ -50,8 +50,14 @@ AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 
     // pro metering (true peak, RMS, loudness) - a separate, switchable section
     toggle ("meterOn", "Meters", true);
-    choice ("rmsWindow", "RMS Window", { "100 ms", "300 ms", "1 s", "3 s" }, 1);
+    // "Integrated" (since reset) matches Voxengo SPAN's Statistics RMS and is the default.
+    choice ("rmsWindow", "RMS Window", { "100 ms", "300 ms", "1 s", "3 s", "Integrated" }, 4);
     choice ("viewMode", "View", { "Spectrum", "LUFS", "RMS", "Peak" }, 0);
+
+    // Spectrum slope, SPAN-equivalent, pivot 1 kHz. 4.5 (SPAN default) = a balanced mix looks flat;
+    // 3 = pink noise flat and every band shows its true level (a tone reads its real amplitude);
+    // 0 = SPAN's raw FFT view (pink noise falls 3 dB/oct).
+    choice ("slope", "Spectrum Slope", { "0 dB/oct", "3 dB/oct (true band level)", "4.5 dB/oct (SPAN default)" }, 2);
 
     return l;
 }

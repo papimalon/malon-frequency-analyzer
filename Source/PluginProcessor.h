@@ -73,6 +73,7 @@ private:
     std::atomic<float>* pMeterOn = nullptr;
     std::atomic<float>* pRmsWindow = nullptr;
     bool meterWasOn = false;
+    bool wasPlaying = false;
     std::atomic<float>* pChannel = nullptr;
     std::atomic<float>* pBands   = nullptr;
     int  currentBpo = 0;

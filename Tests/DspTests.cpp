@@ -358,13 +358,13 @@ static void testBallistics()
 }
 
 // End-to-end through DisplayModel: sine of amplitude 0.5 => about -6 dB on peak AND average;
-// slope control tilts only the average.
+// avgSlope tilts only the average (pivot 1 kHz).
 static void testDisplayModel()
 {
     std::printf("[display] DisplayModel readings and slope\n");
     const double fs = 48000;
     FilterBank fb; fb.prepare (fs, 6);
-    DisplayModel dm; DisplaySettings ds; ds.avgTimeMs = 500;
+    DisplayModel dm; DisplaySettings ds; ds.avgTimeMs = 500; ds.slope = 3.0;   // 3 = no tilt on constant-Q bands
     auto tone = sine (fs, 1000, 0.5, 0.032);
     for (int i = 0; i < 80; ++i)
     {
@@ -379,7 +379,7 @@ static void testDisplayModel()
     ds.avgSlope = 3.0;
     Readout r; fb.process (tone.data(), tone.data(), (int) tone.size(), ChannelMode::Both); fb.read (r);
     dm.update (r, 32.0, ds);
-    const double expectedTilt = 3.0 * (double (b) - 0.5 * dm.numBands) / 6.0;
+    const double expectedTilt = 3.0 * (std::log2 (dm.freqMin / 1000.0) + double (b) / 6.0);   // pivot 1 kHz
     // the average also moved a hair; compare against the untilted value
     CHECK_MSG (std::fabs ((dm.avg[b] - avgFlat) - expectedTilt) < 0.3, "tilt %.2f expected %.2f", dm.avg[b] - avgFlat, expectedTilt);
     dm.frozen = true; const double keep = dm.peak[b];

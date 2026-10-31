@@ -36,6 +36,9 @@ public:
         bool   clipped = false;                             // latched until reset
         double rmsDb[2]        = { kNegInf, kNegInf };      // per channel, dBFS
         double rmsCombinedDb   = kNegInf;                   // both channels together, dBFS
+        double rmsFastDb[2]    = { kNegInf, kNegInf };      // fixed 300 ms window per channel (Out meter, history)
+        double rmsFastCombinedDb = kNegInf;
+        bool   rmsIntegrated   = false;                     // rmsDb / rmsCombinedDb are integrated since reset
         double momentary = kNegInf, shortTerm = kNegInf;    // LUFS
         double integrated = kNegInf;                        // LUFS (gated)
         double loudnessRange = kNegInf;                     // LU (kNegInf until 3 s of audio)
@@ -51,6 +54,12 @@ public:
 
     /** Window for the RMS readout, in milliseconds (1 .. 3000). Audio thread (or before processing). */
     void setRmsWindowMs (int ms) noexcept;
+
+    /** true: rmsDb is the power integrated since the last reset (Voxengo SPAN "Statistics RMS"). */
+    void setRmsIntegrated (bool on) noexcept { rmsIntegratedMode = on; }
+
+    /** Any thread: restart only the integrated RMS (e.g. on host playback start, like SPAN). */
+    void requestRmsIntegratedReset() noexcept { rmsIntResetRequests.fetch_add (1, std::memory_order_release); }
 
     /** Any thread: ask the audio thread to clear held values, integrated loudness, LRA and the clip latch. */
     void requestReset() noexcept { resetRequests.fetch_add (1, std::memory_order_release); }
@@ -125,6 +134,13 @@ private:
     int    rmsHead = 0;
     int    rmsBinsFilled = 0;
     double rmsSum[kMaxChannels] {};
+    static constexpr int kRmsFastBins = 300;                // 300 ms at 1 ms bins
+    double rmsFastSum[kMaxChannels] {};
+    double rmsIntSum[kMaxChannels] {};
+    double rmsIntN = 0.0;
+    bool   rmsIntegratedMode = false;
+    std::atomic<int> rmsIntResetRequests { 0 };
+    int    handledRmsIntResets = 0;
 
     int    handledResets = 0;
 
@@ -133,7 +149,7 @@ private:
 
     // ---- published (relaxed atomics; a read may mix two neighbouring updates, which is harmless) ----
     std::atomic<int> resetRequests { 0 };
-    std::array<std::atomic<float>, 16> pub;
+    std::array<std::atomic<float>, 20> pub;
     std::atomic<float> recentPeak[kMaxChannels];
     std::atomic<int> pubClip { 0 };
 };

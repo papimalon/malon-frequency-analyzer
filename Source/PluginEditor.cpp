@@ -109,6 +109,18 @@ MalonEditor::MalonEditor (MalonProcessor& p)
         }
     };
     addAndMakeVisible (hiResButton);
+    for (auto* b : { &holdButton, &avgButton }) { b->setClickingTogglesState (true); addAndMakeVisible (*b); }
+    holdButton.setTooltip ("Show / hide the white peak-hold line");
+    avgButton.setTooltip ("Show / hide the red average line");
+    holdAtt = std::make_unique<ButtonParameterAttachment> (*proc.apvts.getParameter (ids::holdOn), holdButton);
+    avgAtt  = std::make_unique<ButtonParameterAttachment> (*proc.apvts.getParameter (ids::avgOn), avgButton);
+    slopeBox.addItemList ({ "Slope 0", "Slope 3", "Slope 4.5" }, 1);
+    slopeBox.setTooltip ("Spectrum slope in dB/octave around 1 kHz, same scale as SPAN. 4.5 (SPAN default): a balanced mix looks flat. 3: pink noise flat, tones read their true level at any frequency. 0: SPAN raw view");
+    addAndMakeVisible (slopeBox);
+    slopeAtt = std::make_unique<ComboBoxParameterAttachment> (*proc.apvts.getParameter (ids::slope), slopeBox);
+    addAndMakeVisible (outMeter);
+    addAndMakeVisible (corrBar);
+    outMeter.onClipClicked = [this] { resetMeters(); };
     channelBox.addItemList ({ "Left", "Right", "Stereo", "Mix", "Mid", "Side" }, 1);
     channelBox.setTooltip ("What the spectrum shows: Left, Right, both (Stereo), L+R Mix, Mid (centre) or Side (stereo width)");
     addAndMakeVisible (channelBox);
@@ -192,6 +204,10 @@ void MalonEditor::resized()
         const int widths[4] = { 82, 56, 52, 56 };
         for (int i = 0; i < 4; ++i) modeButtons[i].setBounds (row.removeFromLeft (widths[i]));
         hiResButton.setBounds (row.removeFromRight (64 + 8).withTrimmedRight (8));
+        avgButton.setBounds (row.removeFromRight (46 + 4).withTrimmedRight (4));
+        holdButton.setBounds (row.removeFromRight (52 + 4).withTrimmedRight (4));
+        slopeBox.setVisible (row.getWidth() >= 100);
+        slopeBox.setBounds (row.removeFromRight (92 + 6).withTrimmedRight (6));
     }
 
     if (settingsOpen)
@@ -203,7 +219,13 @@ void MalonEditor::resized()
         content.resized();
         content.setSize (pr.getWidth() - viewport.getScrollBarThickness(), content.getContentHeight());
     }
-    view.setBounds (r.withTrimmedLeft (8).withTrimmedBottom (8).withTrimmedRight (8));
+    {
+        auto g = r.withTrimmedLeft (8).withTrimmedBottom (8).withTrimmedRight (8);
+        outMeter.setBounds (g.removeFromRight (OutMeter::preferredWidth));
+        g.removeFromRight (4);
+        corrBar.setBounds (g.removeFromBottom (CorrelationBar::preferredHeight).withTrimmedLeft (36).withTrimmedRight (36));
+        view.setBounds (g);
+    }
     history.setBounds (view.getBounds());
     about.setBounds (getLocalBounds());
 
@@ -244,6 +266,7 @@ void MalonEditor::resetMeters()
     proc.getMeter().requestReset();
     history.clear();
     double dump[2]; proc.getMeter().consumeRecentPeaks (dump);
+    outMeter.reset();
     liveDb[0] = liveDb[1] = -200.0;
 }
 
@@ -281,6 +304,7 @@ void MalonEditor::applyAllSettings()
     s.ceiling = v (ids::ceiling);  s.range = v (ids::range);  s.grid = v (ids::grid);
     s.octaveGrid = (int) v (ids::freqGrid) == 1;
     s.frozen = model.frozen;
+    s.slope = kSlopes[jlimit (0, 2, (int) v (ids::slope))];
     view.setSettings (s);
     view.setColors (proc.getColors());
     updateMeterVisibility();
@@ -300,7 +324,6 @@ void MalonEditor::pollNow (double dtMs)
     model.update (r, dtMs, proc.getDisplaySettings());
     applyAllSettings();
 
-    if (strip.isVisible())
     {
         double pk[2];
         proc.getMeter().consumeRecentPeaks (pk);
@@ -310,10 +333,20 @@ void MalonEditor::pollNow (double dtMs)
             if (pk[ch] > 0.0) liveDb[ch] = jmax (liveDb[ch], 20.0 * std::log10 (pk[ch]));
         }
         const auto ro = proc.getMeter().read();
-        strip.setReadout (ro, liveDb[0], liveDb[1]);
-        const double pkMax = jmax (pk[0], pk[1]);
-        const double pkDb = pkMax > 0.0 ? 20.0 * std::log10 (pkMax) : -std::numeric_limits<double>::infinity();
-        if (! model.frozen) history.push (ro.momentary, ro.rmsCombinedDb, pkDb < -150.0 ? -std::numeric_limits<double>::infinity() : pkDb);
+        const bool meterOn = proc.apvts.getRawParameterValue (ids::meterOn)->load() > 0.5f;
+        if (! model.frozen)
+        {
+            const double off[2] = { -200.0, -200.0 };
+            outMeter.setLevels (meterOn ? liveDb : off, meterOn ? ro.rmsFastDb : off, ro.channels, meterOn && ro.clipped, dtMs);
+            corrBar.setValue (meterOn && ro.correlationValid, ro.correlation, dtMs);
+        }
+        if (strip.isVisible())
+        {
+            strip.setReadout (ro, liveDb[0], liveDb[1]);
+            const double pkMax = jmax (pk[0], pk[1]);
+            const double pkDb = pkMax > 0.0 ? 20.0 * std::log10 (pkMax) : -std::numeric_limits<double>::infinity();
+            if (! model.frozen) history.push (ro.momentary, ro.rmsFastCombinedDb, pkDb < -150.0 ? -std::numeric_limits<double>::infinity() : pkDb);
+        }
     }
 }
 
@@ -336,6 +369,7 @@ void MalonEditor::updateViewMode()
     if (m != 0) history.setMode (m - 1);
     channelBox.setEnabled (m == 0);
     hiResButton.setVisible (m == 0);
+    holdButton.setVisible (m == 0); avgButton.setVisible (m == 0); slopeBox.setVisible (m == 0);
 }
 
 void MalonEditor::timerCallback()

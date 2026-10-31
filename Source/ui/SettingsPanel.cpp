@@ -138,6 +138,7 @@ SettingsContent::SettingsContent (MalonProcessor& p) : proc (p)
     addSlider (ids::holdSize, "Size", "px");
 
     addHeader ("Level");
+    addCombo (ids::slope, "Slope");
     addSlider (ids::ceiling, "Ceiling", "dB");
     addSlider (ids::range, "Range", "dB");
     addSlider (ids::grid, "Grid", "dB");

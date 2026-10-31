@@ -63,7 +63,15 @@ void MalonProcessor::processImpl (AudioBuffer<Sample>& buffer)
     if (pMeterOn->load() > 0.5f)
     {
         if (! meterWasOn) { meter.reset(); meterWasOn = true; }
-        meter.setRmsWindowMs (kRmsWindowsMs[jlimit (0, 3, (int) pRmsWindow->load())]);
+        // like SPAN's Statistics: integrated RMS restarts when the host starts playing
+        bool playing = wasPlaying;
+        if (auto* ph = getPlayHead())
+            if (auto pos = ph->getPosition()) playing = pos->getIsPlaying();
+        if (playing && ! wasPlaying) meter.requestRmsIntegratedReset();
+        wasPlaying = playing;
+        const int rw = jlimit (0, kRmsIntegratedIndex, (int) pRmsWindow->load());
+        meter.setRmsIntegrated (rw == kRmsIntegratedIndex);
+        if (rw < kRmsIntegratedIndex) meter.setRmsWindowMs (kRmsWindowsMs[rw]);
         meter.process (buffer.getArrayOfReadPointers(), jmin (numCh, 2), n);
     }
     else
@@ -85,6 +93,7 @@ DisplaySettings MalonProcessor::getDisplaySettings() const
     s.avgOn        = v (ids::avgOn) > 0.5;
     s.avgTimeMs    = v (ids::avgTime);
     s.avgSlope     = v (ids::avgSlope);
+    s.slope        = kSlopes[jlimit (0, 2, (int) v (ids::slope))];
     s.holdOn       = v (ids::holdOn) > 0.5;
     s.holdInfinite = v (ids::holdInfinite) > 0.5;
     s.holdTimeMs   = v (ids::holdTime);

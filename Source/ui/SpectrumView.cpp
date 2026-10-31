@@ -249,6 +249,15 @@ void SpectrumView::paint (Graphics& g)
         }
     }
 
+    // scale label: what the dB axis means with the current tilt
+    {
+        const String sl = "dB  slope " + String (settings.slope, settings.slope == std::floor (settings.slope) ? 0 : 1)
+                          + " dB/oct @ 1 kHz" + (settings.slope == 3.0 ? "  (true level)" : "");
+        g.setFont (uiFont (9.5f));
+        g.setColour (colors[ColorScheme::GridLabel]);
+        g.drawText (sl, Rectangle<float> (plot.getRight() - 210.0f, plot.getY() + 6.0f, 202.0f, 12.0f), Justification::centredRight, false);
+    }
+
     if (settings.frozen)
     {
         g.setColour (palette::red);

@@ -4,6 +4,7 @@
 #include "PluginProcessor.h"
 #include "ui/MalonLookAndFeel.h"
 #include "ui/SpectrumView.h"
+#include "ui/OutMeter.h"
 #include "ui/SettingsPanel.h"
 #include "ui/MeterStrip.h"
 #include "ui/HistoryPanel.h"
@@ -73,6 +74,16 @@ private:
     juce::TextButton modeButtons[4] { juce::TextButton ("SPECTRUM"), juce::TextButton ("LUFS"), juce::TextButton ("RMS"), juce::TextButton ("PEAK") };
     int viewMode = -1;
     juce::TextButton hiResButton { "HI-RES" };
+    juce::TextButton holdButton { "HOLD" }, avgButton { "AVG" };
+    std::unique_ptr<juce::ButtonParameterAttachment> holdAtt, avgAtt;
+    juce::ComboBox slopeBox;
+    std::unique_ptr<juce::ComboBoxParameterAttachment> slopeAtt;
+    OutMeter outMeter;
+    CorrelationBar corrBar;
+public:
+    OutMeter& getOutMeter() noexcept { return outMeter; }
+    CorrelationBar& getCorrelationBar() noexcept { return corrBar; }
+private:
     void updateHiResButton();
     void updateViewMode();
     juce::ComboBox channelBox;

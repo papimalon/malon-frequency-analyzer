@@ -15,7 +15,7 @@ String MeterStrip::fmt (double db, int decimals)
 
 MeterStrip::MeterStrip (MalonProcessor& p)
 {
-    rmsBox.addItem ("100 ms", 1); rmsBox.addItem ("300 ms", 2); rmsBox.addItem ("1 s", 3); rmsBox.addItem ("3 s", 4);
+    rmsBox.addItem ("100 ms", 1); rmsBox.addItem ("300 ms", 2); rmsBox.addItem ("1 s", 3); rmsBox.addItem ("3 s", 4); rmsBox.addItem ("Integrated", 5);
     rmsBox.setTooltip ("RMS window");
     addAndMakeVisible (rmsBox);
     rmsAtt = std::make_unique<ComboBoxParameterAttachment> (*p.apvts.getParameter (ids::rmsWindow), rmsBox);
@@ -45,7 +45,7 @@ MeterStrip::Layout MeterStrip::layout() const
 void MeterStrip::resized()
 {
     auto l = layout();
-    rmsBox.setBounds (l.rms.getRight() - 62, l.rms.getY() - 3, 62, 20);
+    rmsBox.setBounds (l.rms.getRight() - 84, l.rms.getY() - 3, 84, 20);
     resetButton.setBounds (l.ctl.getX(), l.ctl.getY() + 24, l.ctl.getWidth(), 26);
     ledArea = Rectangle<int> (l.ctl.getX(), l.ctl.getY(), l.ctl.getWidth(), 18);
 }

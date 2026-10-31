@@ -12,7 +12,7 @@ namespace
     constexpr double kPi = 3.14159265358979323846;
 
     // indices into the published array
-    enum Pub { TpMax, TpL, TpR, SpMax, RmsL, RmsR, RmsAll, Mom, Short, Integ, Lra, MomMax, ShortMax, Corr, NumPub };
+    enum Pub { TpMax, TpL, TpR, SpMax, RmsL, RmsR, RmsAll, Mom, Short, Integ, Lra, MomMax, ShortMax, Corr, RmsFL, RmsFR, RmsFAll, NumPub };
 
     double besselI0 (double x)
     {
@@ -94,7 +94,8 @@ void LevelMeter::prepare (double sampleRate, int numChannels)
     std::memset (tpHist, 0, sizeof (tpHist));
     tpIdx = 0;
     rmsBinPos = 0; rmsHead = 0; rmsBinsFilled = 0;
-    for (int c = 0; c < kMaxChannels; ++c) { rmsBinAcc[c] = 0; rmsSum[c] = 0; }
+    for (int c = 0; c < kMaxChannels; ++c) { rmsBinAcc[c] = 0; rmsSum[c] = 0; rmsFastSum[c] = 0; rmsIntSum[c] = 0; }
+    rmsIntN = 0.0;
     setRmsWindowMs (300);
     reset();
     handledResets = resetRequests.load (std::memory_order_acquire);
@@ -129,6 +130,8 @@ void LevelMeter::reset() noexcept
     blockHead = 0; blockPos = 0; blocksTotal = 0;
     momentaryMaxLin = shortTermMaxLin = 0.0;
     corrLR = corrLL = corrRR = 0.0;
+    for (int c = 0; c < kMaxChannels; ++c) rmsIntSum[c] = 0.0;
+    rmsIntN = 0.0;
     lastMomentary = lastShort = lastIntegrated = lastLra = kNegInf;
     if (! gateCount.empty())
     {
@@ -148,9 +151,14 @@ void LevelMeter::finishRmsBin() noexcept
         const double leaving = rmsRing[c][(size_t) ((rmsHead - rmsWindowBins + cap * 2) % cap)];
         rmsSum[c] += rmsBinAcc[c] - leaving;
         if (rmsSum[c] < 0.0) rmsSum[c] = 0.0;
+        const double leavingFast = rmsRing[c][(size_t) ((rmsHead - kRmsFastBins + cap * 2) % cap)];
+        rmsFastSum[c] += rmsBinAcc[c] - leavingFast;
+        if (rmsFastSum[c] < 0.0) rmsFastSum[c] = 0.0;
+        rmsIntSum[c] += rmsBinAcc[c];
         slot = rmsBinAcc[c];
         rmsBinAcc[c] = 0.0;
     }
+    rmsIntN += rmsBinLen;
     rmsHead = (rmsHead + 1) % cap;
     rmsBinsFilled = std::min (rmsBinsFilled + 1, kRmsMaxBins);
 }
@@ -243,6 +251,12 @@ void LevelMeter::processImpl (const T* const* in, int numCh, int n) noexcept
         handledResets = resetRequests.load (std::memory_order_acquire);
         reset();
     }
+    if (rmsIntResetRequests.load (std::memory_order_acquire) != handledRmsIntResets)
+    {
+        handledRmsIntResets = rmsIntResetRequests.load (std::memory_order_acquire);
+        for (int c = 0; c < kMaxChannels; ++c) rmsIntSum[c] = 0.0;
+        rmsIntN = 0.0;
+    }
     const int nc = std::min (channels, std::max (1, numCh));
     constexpr int T2 = kTpTaps;
     double blockPeak[kMaxChannels] = { 0.0, 0.0 };
@@ -319,7 +333,18 @@ void LevelMeter::publish() noexcept
     put (TpR, toDbF (channels > 1 ? tpHeld[1] : tpHeld[0]));
     put (SpMax, toDbF (samplePeakHeld));
     const double win = (double) rmsWindowBins * rmsBinLen;
-    const double l = rmsSum[0] / win, r = channels > 1 ? rmsSum[1] / win : l;
+    double l = rmsSum[0] / win, r = channels > 1 ? rmsSum[1] / win : l;
+    if (rmsIntegratedMode)      // SPAN Statistics: mean square since reset, per channel, no +3 dB
+    {
+        l = rmsIntN > 0 ? rmsIntSum[0] / rmsIntN : 0.0;
+        r = channels > 1 ? (rmsIntN > 0 ? rmsIntSum[1] / rmsIntN : 0.0) : l;
+    }
+    {
+        const double fw = (double) kRmsFastBins * rmsBinLen;
+        const double fl = rmsFastSum[0] / fw, fr = channels > 1 ? rmsFastSum[1] / fw : fl;
+        put (RmsFL, msToDbF (fl)); put (RmsFR, msToDbF (fr));
+        put (RmsFAll, msToDbF (channels > 1 ? 0.5 * (fl + fr) : fl));
+    }
     put (RmsL, msToDbF (l));
     put (RmsR, msToDbF (r));
     put (RmsAll, msToDbF (channels > 1 ? 0.5 * (l + r) : l));
@@ -347,6 +372,8 @@ LevelMeter::Readout LevelMeter::read() const noexcept
     r.truePeakMaxDb = get (TpMax); r.truePeakDb[0] = get (TpL); r.truePeakDb[1] = get (TpR);
     r.samplePeakMaxDb = get (SpMax);
     r.clipped = pubClip.load (std::memory_order_relaxed) != 0;
+    r.rmsFastDb[0] = get (RmsFL); r.rmsFastDb[1] = get (RmsFR); r.rmsFastCombinedDb = get (RmsFAll);
+    r.rmsIntegrated = rmsIntegratedMode;
     r.rmsDb[0] = get (RmsL); r.rmsDb[1] = get (RmsR); r.rmsCombinedDb = get (RmsAll);
     r.momentary = get (Mom); r.shortTerm = get (Short); r.integrated = get (Integ);
     r.loudnessRange = get (Lra);

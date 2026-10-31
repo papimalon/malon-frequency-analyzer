@@ -17,6 +17,7 @@ struct ViewSettings
     double ceiling = 3, range = 51, grid = 5;
     bool octaveGrid = false;
     bool frozen = false;
+    double slope = 4.5;   // dB/oct, pivot 1 kHz (for the scale label)
 };
 
 class SpectrumView : public juce::Component

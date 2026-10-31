@@ -75,7 +75,9 @@ static void testParametersAndState()
     CHECK (getParam (a, ids::holdDecay) == 3);  CHECK (getParam (a, ids::ceiling) == 3);
     CHECK (getParam (a, ids::range) == 51);     CHECK (getParam (a, ids::grid) == 5);
     CHECK (getParam (a, ids::bands) == 2);      CHECK (getParam (a, ids::avgSize) == 3);
-    CHECK (getParam (a, ids::meterOn) == 1);    CHECK (getParam (a, ids::rmsWindow) == 1);   // meters on, 300 ms
+    CHECK (getParam (a, ids::meterOn) == 1);    CHECK (getParam (a, ids::rmsWindow) == 4);   // meters on, 300 ms
+    CHECK (getParam (a, ids::slope) == 2);      // 4.5 dB/oct by default, like SPAN
+    CHECK (getParam (a, ids::holdOn) == 1);     CHECK (getParam (a, ids::avgOn) == 1);
     CHECK (getParam (a, ids::holdSize) == 2);   CHECK (getParam (a, ids::avgSlope) == 0);
     auto rng = [&] (const char* id) { return dynamic_cast<RangedAudioParameter*> (a.apvts.getParameter (id))->getNormalisableRange(); };
     CHECK (rng (ids::avgTime).start == 100 && rng (ids::avgTime).end == 20000 && rng (ids::avgTime).interval == 100);
