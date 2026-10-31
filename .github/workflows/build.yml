@@ -2,7 +2,7 @@ name: Build
 
 # Builds Malon Frequency Analyzer for Windows, macOS (universal arm64 + x86_64) and Linux,
 # runs the unit tests and pluginval, and uploads the plugins as artifacts.
-# Releases: push a tag like v1.0.0 and the zips are attached to a GitHub release.
+# Tags (v*) build the same zips as artifacts; no GitHub Release is created automatically.
 
 on:
   push:
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # only used to attach files to a release on tag pushes
+  contents: read
 
 env:
   BUILD_TYPE: Release
@@ -145,11 +145,8 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}.zip
 
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v') && runner.os != 'Linux'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ matrix.artifact }}.zip
+      # No automatic GitHub Release: tags only build the zips as workflow artifacts.
+      # (Publishing a Release is a manual decision.)
 
   # NOTE: macOS builds are unsigned and un-notarised. Before a public release, add an Apple Developer ID
   # certificate as repository secrets and sign + notarise the .vst3 and .component (see docs/RELEASE.md).
