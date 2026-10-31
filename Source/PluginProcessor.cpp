@@ -18,22 +18,15 @@ MalonProcessor::MalonProcessor()
     pBands   = apvts.getRawParameterValue (ids::bands);
     pMeterOn = apvts.getRawParameterValue (ids::meterOn);
     pRmsWindow = apvts.getRawParameterValue (ids::rmsWindow);
-    apvts.addParameterListener (ids::specMode, this);
-    for (auto& id : modeParamIds()) apvts.addParameterListener (id, this);
     lastAppliedMode = roundToInt (apvts.getRawParameterValue (ids::specMode)->load());
     if (useUserDefault()) loadDefault();
 }
 
-MalonProcessor::~MalonProcessor()
-{
-    cancelPendingUpdate();
-    apvts.removeParameterListener (ids::specMode, this);
-    for (auto& id : modeParamIds()) apvts.removeParameterListener (id, this);
-}
+MalonProcessor::~MalonProcessor() = default;
 
 // Message thread. A new Mode choice applies its preset; a hand-made change to a setting the Mode
 // controls switches the Mode to Off (custom), like SPAN.
-void MalonProcessor::handleAsyncUpdate()
+void MalonProcessor::syncModeNow()
 {
     const int m = jlimit (0, 7, roundToInt (apvts.getRawParameterValue (ids::specMode)->load()));
     if (m != lastAppliedMode)
@@ -46,7 +39,6 @@ void MalonProcessor::handleAsyncUpdate()
         lastAppliedMode = 0;
         setParam (apvts, ids::specMode, 0.0f);
     }
-    handleUpdateNowIfNeeded();   // our own changes re-triggered us; they are consistent now
 }
 
 bool MalonProcessor::isBusesLayoutSupported (const BusesLayout& l) const
@@ -165,7 +157,6 @@ void MalonProcessor::applyStateTree (const ValueTree& t)
     apvts.replaceState (t);
     // a restored session keeps its own values: never re-apply the Mode preset over them
     lastAppliedMode = jlimit (0, 7, roundToInt (apvts.getRawParameterValue (ids::specMode)->load()));
-    triggerAsyncUpdate();
     colors = ColorScheme::fromString (apvts.state.getProperty (kColors).toString(), ColorScheme::defaults());
     sendChangeMessage();
 }

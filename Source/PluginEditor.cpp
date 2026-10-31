@@ -328,6 +328,7 @@ void MalonEditor::changeListenerCallback (ChangeBroadcaster*)
 
 void MalonEditor::pollNow (double dtMs)
 {
+    proc.syncModeNow();
     Readout r;
     proc.getBank().read (r);         // always fills the layout; zero data when no audio arrived
     model.update (r, dtMs, proc.getDisplaySettings());
