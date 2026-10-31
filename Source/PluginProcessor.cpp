@@ -1,6 +1,7 @@
 // Malon Frequency Analyzer - Copyright (C) 2026 MUSICA MALON, AGPL-3.0-or-later (see LICENSE)
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "Modes.h"
 
 namespace malon
 {
@@ -17,7 +18,35 @@ MalonProcessor::MalonProcessor()
     pBands   = apvts.getRawParameterValue (ids::bands);
     pMeterOn = apvts.getRawParameterValue (ids::meterOn);
     pRmsWindow = apvts.getRawParameterValue (ids::rmsWindow);
+    apvts.addParameterListener (ids::specMode, this);
+    for (auto& id : modeParamIds()) apvts.addParameterListener (id, this);
+    lastAppliedMode = roundToInt (apvts.getRawParameterValue (ids::specMode)->load());
     if (useUserDefault()) loadDefault();
+}
+
+MalonProcessor::~MalonProcessor()
+{
+    cancelPendingUpdate();
+    apvts.removeParameterListener (ids::specMode, this);
+    for (auto& id : modeParamIds()) apvts.removeParameterListener (id, this);
+}
+
+// Message thread. A new Mode choice applies its preset; a hand-made change to a setting the Mode
+// controls switches the Mode to Off (custom), like SPAN.
+void MalonProcessor::handleAsyncUpdate()
+{
+    const int m = jlimit (0, 7, roundToInt (apvts.getRawParameterValue (ids::specMode)->load()));
+    if (m != lastAppliedMode)
+    {
+        lastAppliedMode = m;
+        applyMode (apvts, m);
+    }
+    else if (m != 0 && ! modeMatches (apvts, m))
+    {
+        lastAppliedMode = 0;
+        setParam (apvts, ids::specMode, 0.0f);
+    }
+    handleUpdateNowIfNeeded();   // our own changes re-triggered us; they are consistent now
 }
 
 bool MalonProcessor::isBusesLayoutSupported (const BusesLayout& l) const
@@ -26,7 +55,7 @@ bool MalonProcessor::isBusesLayoutSupported (const BusesLayout& l) const
     return in == out && (in == AudioChannelSet::stereo() || in == AudioChannelSet::mono());
 }
 
-static int bpoFromIndex (int i) { static const int v[] = { 3, 4, 6, 12, 24 }; return v[jlimit (0, 4, i)]; }
+static int bpoFromIndex (int i) { static const int v[] = { 3, 4, 6, 12, 24, 48 }; return v[jlimit (0, 5, i)]; }
 
 void MalonProcessor::prepareToPlay (double sampleRate, int)
 {
@@ -134,6 +163,9 @@ void MalonProcessor::applyStateTree (const ValueTree& t)
 {
     if (! t.isValid() || ! t.hasType (apvts.state.getType())) return;
     apvts.replaceState (t);
+    // a restored session keeps its own values: never re-apply the Mode preset over them
+    lastAppliedMode = jlimit (0, 7, roundToInt (apvts.getRawParameterValue (ids::specMode)->load()));
+    triggerAsyncUpdate();
     colors = ColorScheme::fromString (apvts.state.getProperty (kColors).toString(), ColorScheme::defaults());
     sendChangeMessage();
 }

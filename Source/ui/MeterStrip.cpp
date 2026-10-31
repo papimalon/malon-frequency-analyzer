@@ -20,6 +20,12 @@ MeterStrip::MeterStrip (MalonProcessor& p)
     addAndMakeVisible (rmsBox);
     rmsAtt = std::make_unique<ComboBoxParameterAttachment> (*p.apvts.getParameter (ids::rmsWindow), rmsBox);
 
+    for (int i = 0; i < msCount; ++i) scaleBox.addItem (kMeterScaleNames[i], i + 1);
+    scaleBox.setTooltip ("Metering scale for the Out meter and RMS, like SPAN: DBFS, DBFS+3 (sine RMS = peak), K-20/14/12 (Katz K-system, 600 ms RMS), DBFS.30/.15 (zoomed range), LUFS/LU momentary (ML) or short-term (SL)");
+    addAndMakeVisible (scaleBox);
+    scaleAtt = std::make_unique<ComboBoxParameterAttachment> (*p.apvts.getParameter (ids::meterScale), scaleBox);
+    pScale = p.apvts.getRawParameterValue (ids::meterScale);
+
     resetButton.setTooltip ("Reset held peaks, integrated loudness, loudness range and the clip light");
     resetButton.onClick = [this] { if (onReset) onReset(); };
     addAndMakeVisible (resetButton);
@@ -57,6 +63,8 @@ void MeterStrip::resized()
     resetButton.setBounds (l.ctl.getX(), l.ctl.getY() + 24, l.ctl.getWidth(), 26);
     ledArea = Rectangle<int> (l.ctl.getX(), l.ctl.getY(), l.ctl.getWidth(), 18);
     corr.setCompact (getWidth() < 600);
+    scaleBox.setVisible (getWidth() >= 600);
+    scaleBox.setBounds (l.ctl.getX(), l.ctl.getY() + 58, l.ctl.getWidth(), 20);
     corr.setBounds (l.corr.withHeight (jmin (l.corr.getHeight(), CorrelationBar::preferredHeight)));
 }
 
@@ -153,9 +161,13 @@ void MeterStrip::paint (Graphics& g)
     // ---- RMS ----
     {
         header (l.rms, "RMS");
-        big (l.rms, ro.rmsCombinedDb, "dBFS", text);
+        // RMS statistic follows the metering scale bias (DBFS+3, K-system), like SPAN's "RMS" stat
+        const auto sp = meterScaleSpec (pScale != nullptr ? juce::roundToInt (pScale->load()) : 0);
+        const double bias = sp.loudness ? 0.0 : sp.rmsBias;
+        const char* unit = sp.loudness ? "dBFS" : sp.unit;
+        big (l.rms, ro.rmsCombinedDb + bias, unit, text);
         small (Rectangle<int> (l.rms.getX(), l.rms.getY() + 54, l.rms.getWidth(), 16),
-               stereo ? "L " + fmt (ro.rmsDb[0]) + "     R " + fmt (ro.rmsDb[1]) : "M " + fmt (ro.rmsDb[0]));
+               stereo ? "L " + fmt (ro.rmsDb[0] + bias) + "     R " + fmt (ro.rmsDb[1] + bias) : "M " + fmt (ro.rmsDb[0] + bias));
     }
 
     // ---- loudness ----

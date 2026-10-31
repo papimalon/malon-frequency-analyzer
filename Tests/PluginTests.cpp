@@ -7,6 +7,8 @@
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginEditor.h"
 #include <random>
+#include "../Source/Modes.h"
+#include "../Source/ui/MeterScale.h"
 
 using namespace juce;
 using namespace malon;
@@ -242,6 +244,77 @@ static void testMeterInProcessor()
             }
             CHECK_MSG (near (p.getMeter().read().integrated, -20.0, 0.05), "rate %.0f: I %.3f", rate, p.getMeter().read().integrated);
         }
+    }
+}
+
+// ---- v1.2: SPAN-style Modes + metering scales -------------------------------
+
+static void testModesAndScales()
+{
+    std::printf ("[modes] spectrum Mode presets, manual change -> Off, state; metering scales\n");
+    MalonProcessor::useUserDefault() = false;
+    {
+        MalonProcessor p;
+        CHECK_MSG (roundToInt (getParam (p, ids::specMode)) == kModeDefault, "default mode %d", roundToInt (getParam (p, ids::specMode)));
+        CHECK_MSG (modeMatches (p.apvts, kModeDefault), "factory settings must equal the Default mode");
+        CHECK (roundToInt (getParam (p, ids::slope)) == 2);       // 4.5 dB/oct
+        for (int m = 1; m < 8; ++m)
+        {
+            setParam (p, ids::specMode, (float) m); p.syncModeNow();
+            CHECK_MSG (roundToInt (getParam (p, ids::specMode)) == m && modeMatches (p.apvts, m), "mode %d not applied", m);
+        }
+        setParam (p, ids::specMode, 3); p.syncModeNow();
+        CHECK (roundToInt (getParam (p, ids::bands)) == kBandsHiResIndex && roundToInt (getParam (p, ids::peakShow)) == 2);
+        setParam (p, ids::peakDecay, 30); p.syncModeNow();            // hand-made change
+        CHECK_MSG (roundToInt (getParam (p, ids::specMode)) == 0, "manual change did not switch to Off");
+        CHECK (std::abs (getParam (p, ids::peakDecay) - 30.0f) < 0.01f);  // and the change itself stays
+        setParam (p, ids::ceiling, 0); p.syncModeNow();               // not a Mode setting: Off stays Off, nothing applied
+        CHECK (roundToInt (getParam (p, ids::specMode)) == 0);
+        // a session saved in Off/custom restores exactly, never re-applying a preset
+        MemoryBlock mb; p.getStateInformation (mb);
+        MalonProcessor q; q.setStateInformation (mb.getData(), (int) mb.getSize()); q.syncModeNow();
+        CHECK (roundToInt (getParam (q, ids::specMode)) == 0 && std::abs (getParam (q, ids::peakDecay) - 30.0f) < 0.01f);
+        // a session saved in Avg+Max restores as Avg+Max
+        setParam (p, ids::specMode, 7); p.syncModeNow();
+        p.getStateInformation (mb);
+        MalonProcessor r; r.setStateInformation (mb.getData(), (int) mb.getSize()); r.syncModeNow();
+        CHECK (roundToInt (getParam (r, ids::specMode)) == 7 && getParam (r, ids::holdInfinite) > 0.5f && getParam (r, ids::peakOn) < 0.5f);
+        // an old (v1.1) session without the Mode setting but with custom values: values kept, Mode -> Off
+        auto t = p.apvts.copyState(); t.setProperty ("dummy", 1, nullptr);
+        for (int i = t.getNumChildren(); --i >= 0;)
+            if (t.getChild (i).getProperty ("id").toString() == ids::specMode) t.removeChild (i, nullptr);
+        if (auto xml = t.createXml())
+        {
+            MemoryBlock old; AudioProcessor::copyXmlToBinary (*xml, old);
+            MalonProcessor o; o.setStateInformation (old.getData(), (int) old.getSize()); o.syncModeNow();
+            CHECK_MSG (roundToInt (getParam (o, ids::specMode)) == 0 && getParam (o, ids::holdInfinite) > 0.5f, "old session: mode %d", roundToInt (getParam (o, ids::specMode)));
+        }
+    }
+    // metering scales: standard values (sine-referenced K-system, BS.1770 LUFS, LU = LUFS + 23)
+    {
+        const double sineRms = -23.0103;     // a -20 dBFS peak sine
+        auto mv = [&] (int sc) { return meterValues (meterScaleSpec (sc), sineRms, sineRms, -20.0, -20.0, -20.0); };
+        CHECK (std::abs (mv (msDbfs).bar - sineRms) < 1e-9 && std::abs (mv (msDbfs).peak + 20.0) < 1e-9);
+        CHECK (std::abs (mv (msDbfsPlus3).bar + 20.0) < 1e-3 && std::abs (mv (msDbfsPlus3).peak + 20.0) < 1e-9);
+        CHECK (std::abs (mv (msK20).bar) < 1e-3 && std::abs (mv (msK20C).bar) < 1e-3);        // -20 dBFS sine = 0 on K-20
+        CHECK (std::abs (mv (msK14).bar + 6.0) < 1e-3 && std::abs (mv (msK12).bar + 8.0) < 1e-3);
+        CHECK (std::abs (meterScaleSpec (msK20).top - 20.0) < 1e-9 && std::abs (meterScaleSpec (msK14).top - 14.0) < 1e-9);  // top = 0 dBFS
+        CHECK (std::abs (mv (msLufsML).bar + 20.0) < 1e-9 && std::abs (mv (msLuSL).bar - 3.0) < 1e-9);
+        CHECK (std::abs (meterScaleSpec (msDbfs30).bottom + 30.0) < 1e-9 && std::abs (meterScaleSpec (msDbfs15).bottom + 15.0) < 1e-9);
+        // in the processor: 600 ms K window of a -20 dBFS sine reads -23.01 dBFS
+        MalonProcessor p; p.setPlayConfigDetails (2, 2, 48000, 480); p.prepareToPlay (48000, 480);
+        double ph = 0;
+        for (int k = 0; k < 200; ++k)
+        {
+            AudioBuffer<float> b (2, 480);
+            for (int i = 0; i < 480; ++i, ph += 2.0 * MathConstants<double>::pi * 1000.0 / 48000.0) for (int c = 0; c < 2; ++c) b.setSample (c, i, (float) (0.1 * std::sin (ph)));
+            MidiBuffer m; p.processBlock (b, m);
+        }
+        const auto ro = p.getMeter().read();
+        std::printf ("  -20 dBFS sine: K window RMS %.3f dBFS -> K-20 %.3f, momentary %.3f LUFS -> LU %.3f\n", ro.rmsKDb[0],
+                     meterValues (meterScaleSpec (msK20), ro.rmsFastDb[0], ro.rmsKDb[0], 0, ro.momentary, ro.shortTerm).bar,
+                     ro.momentary, meterValues (meterScaleSpec (msLuML), 0, 0, 0, ro.momentary, ro.shortTerm).bar);
+        CHECK_MSG (std::abs (ro.rmsKDb[0] - sineRms) < 0.02, "K RMS %.3f", ro.rmsKDb[0]);
     }
 }
 
@@ -487,6 +560,42 @@ static void screenshots (const File& dir)
     CHECK_MSG (ed->getModel().peak[20] == before, "frozen display moved");
     ed->setFrozen (false);
 
+    // v1.2: HI-RES (48 bands/oct filled curve), Mode menu, metering scales
+    {
+        ed->setSize (780, 500);
+        setParam (p, ids::specMode, 0); p.syncModeNow();
+        setParam (p, ids::specMode, 1); p.syncModeNow();
+        CHECK (ed->getModeBox().isVisible());
+        ed->getHiResButton().setToggleState (true, sendNotification);   // like a click
+        CHECK_MSG (roundToInt (getParam (p, ids::specMode)) == 3 && roundToInt (getParam (p, ids::bands)) == kBandsHiResIndex, "HI-RES -> mode %d", roundToInt (getParam (p, ids::specMode)));
+        runAudio (p, *ed, syn, 8.5);   // (lands outside the synth's drum breakdown)
+        CHECK (ed->getModel().numBands > 400);
+        CHECK (save (*ed, dir.getChildFile ("v12-1-hires-48.png")));
+        ed->getHiResButton().setToggleState (false, sendNotification);
+        CHECK (roundToInt (getParam (p, ids::specMode)) == 1 && roundToInt (getParam (p, ids::bands)) == kBandsDefaultIndex);
+        const char* shots[] = { nullptr, nullptr, "v12-2-mode-slower.png", nullptr, nullptr, "v12-3-mode-master.png", "v12-4-mode-average.png", "v12-5-mode-avgmax.png" };
+        for (int m : { 2, 5, 6, 7 })
+        {
+            setParam (p, ids::specMode, (float) m); p.syncModeNow(); runAudio (p, *ed, syn, 4.0);
+            CHECK (save (*ed, dir.getChildFile (shots[m])));
+        }
+        setParam (p, ids::specMode, 1); p.syncModeNow();
+        const struct { int sc; const char* f; } sc[] = { { msK20, "v12-6-meter-k20.png" }, { msLuSL, "v12-7-meter-lu-sl.png" }, { msDbfs15, "v12-8-meter-dbfs15.png" } };
+        for (auto& x : sc)
+        {
+            setParam (p, ids::meterScale, (float) x.sc); runAudio (p, *ed, syn, 3.5);
+            CHECK (std::string (ed->getOutMeter().getScale().unit) == kMeterScaleNames[x.sc] || x.sc != msK20);
+            CHECK (save (*ed, dir.getChildFile (x.f)));
+        }
+        setParam (p, ids::meterScale, 0);
+        ed->setSize (1060, 640); ed->setSettingsOpen (true); runAudio (p, *ed, syn, 0.5);
+        CHECK (save (*ed, dir.getChildFile ("v12-9-settings.png")));
+        ed->setSettingsOpen (false);
+        ed->setSize (520, 340); runAudio (p, *ed, syn, 0.5);
+        CHECK (save (*ed, dir.getChildFile ("v12-10-small.png")));
+        ed->setSize (780, 480);
+    }
+
     // resizing keeps the saved size in the state
     CHECK (p.getSavedEditorSize().x == 780);
     ed.reset();
@@ -502,6 +611,7 @@ int main (int argc, char** argv)
     testParametersAndState();
     testEndToEnd();
     testMeterInProcessor();
+    testModesAndScales();
     screenshots (out);
     std::printf ("\n%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;

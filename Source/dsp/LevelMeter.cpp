@@ -12,7 +12,7 @@ namespace
     constexpr double kPi = 3.14159265358979323846;
 
     // indices into the published array
-    enum Pub { TpMax, TpL, TpR, SpMax, RmsL, RmsR, RmsAll, Mom, Short, Integ, Lra, MomMax, ShortMax, Corr, RmsFL, RmsFR, RmsFAll, NumPub };
+    enum Pub { TpMax, TpL, TpR, SpMax, RmsL, RmsR, RmsAll, Mom, Short, Integ, Lra, MomMax, ShortMax, Corr, RmsFL, RmsFR, RmsFAll, RmsKL, RmsKR, NumPub };
 
     double besselI0 (double x)
     {
@@ -94,7 +94,7 @@ void LevelMeter::prepare (double sampleRate, int numChannels)
     std::memset (tpHist, 0, sizeof (tpHist));
     tpIdx = 0;
     rmsBinPos = 0; rmsHead = 0; rmsBinsFilled = 0;
-    for (int c = 0; c < kMaxChannels; ++c) { rmsBinAcc[c] = 0; rmsSum[c] = 0; rmsFastSum[c] = 0; rmsIntSum[c] = 0; }
+    for (int c = 0; c < kMaxChannels; ++c) { rmsBinAcc[c] = 0; rmsSum[c] = 0; rmsFastSum[c] = 0; rmsKSum[c] = 0; rmsIntSum[c] = 0; }
     rmsIntN = 0.0;
     setRmsWindowMs (300);
     reset();
@@ -154,6 +154,8 @@ void LevelMeter::finishRmsBin() noexcept
         const double leavingFast = rmsRing[c][(size_t) ((rmsHead - kRmsFastBins + cap * 2) % cap)];
         rmsFastSum[c] += rmsBinAcc[c] - leavingFast;
         if (rmsFastSum[c] < 0.0) rmsFastSum[c] = 0.0;
+        rmsKSum[c] += rmsBinAcc[c] - rmsRing[c][(size_t) ((rmsHead - kRmsKBins + cap * 2) % cap)];
+        if (rmsKSum[c] < 0.0) rmsKSum[c] = 0.0;
         rmsIntSum[c] += rmsBinAcc[c];
         slot = rmsBinAcc[c];
         rmsBinAcc[c] = 0.0;
@@ -345,6 +347,11 @@ void LevelMeter::publish() noexcept
         put (RmsFL, msToDbF (fl)); put (RmsFR, msToDbF (fr));
         put (RmsFAll, msToDbF (channels > 1 ? 0.5 * (fl + fr) : fl));
     }
+    {   // K-system: 600 ms RMS window (Katz), unweighted
+        const double kw = (double) kRmsKBins * rmsBinLen;
+        const double kl = rmsKSum[0] / kw, kr = channels > 1 ? rmsKSum[1] / kw : kl;
+        put (RmsKL, msToDbF (kl)); put (RmsKR, msToDbF (kr));
+    }
     put (RmsL, msToDbF (l));
     put (RmsR, msToDbF (r));
     put (RmsAll, msToDbF (channels > 1 ? 0.5 * (l + r) : l));
@@ -373,6 +380,7 @@ LevelMeter::Readout LevelMeter::read() const noexcept
     r.samplePeakMaxDb = get (SpMax);
     r.clipped = pubClip.load (std::memory_order_relaxed) != 0;
     r.rmsFastDb[0] = get (RmsFL); r.rmsFastDb[1] = get (RmsFR); r.rmsFastCombinedDb = get (RmsFAll);
+    r.rmsKDb[0] = get (RmsKL); r.rmsKDb[1] = get (RmsKR);
     r.rmsIntegrated = rmsIntegratedMode;
     r.rmsDb[0] = get (RmsL); r.rmsDb[1] = get (RmsR); r.rmsCombinedDb = get (RmsAll);
     r.momentary = get (Mom); r.shortTerm = get (Short); r.integrated = get (Integ);

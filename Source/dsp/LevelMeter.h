@@ -38,6 +38,7 @@ public:
         double rmsCombinedDb   = kNegInf;                   // both channels together, dBFS
         double rmsFastDb[2]    = { kNegInf, kNegInf };      // fixed 300 ms window per channel (Out meter, history)
         double rmsFastCombinedDb = kNegInf;
+        double rmsKDb[2]       = { kNegInf, kNegInf };      // fixed 600 ms window per channel (K-system metering)
         bool   rmsIntegrated   = false;                     // rmsDb / rmsCombinedDb are integrated since reset
         double momentary = kNegInf, shortTerm = kNegInf;    // LUFS
         double integrated = kNegInf;                        // LUFS (gated)
@@ -136,6 +137,8 @@ private:
     double rmsSum[kMaxChannels] {};
     static constexpr int kRmsFastBins = 300;                // 300 ms at 1 ms bins
     double rmsFastSum[kMaxChannels] {};
+    static constexpr int kRmsKBins = 600;                   // 600 ms at 1 ms bins (K-system)
+    double rmsKSum[kMaxChannels] {};
     double rmsIntSum[kMaxChannels] {};
     double rmsIntN = 0.0;
     bool   rmsIntegratedMode = false;
@@ -149,7 +152,7 @@ private:
 
     // ---- published (relaxed atomics; a read may mix two neighbouring updates, which is harmless) ----
     std::atomic<int> resetRequests { 0 };
-    std::array<std::atomic<float>, 20> pub;
+    std::array<std::atomic<float>, 24> pub;
     std::atomic<float> recentPeak[kMaxChannels];
     std::atomic<int> pubClip { 0 };
 };

@@ -93,7 +93,7 @@ void SpectrumView::drawGrid (Graphics& g, Rectangle<float> plot, int n)
 }
 
 void SpectrumView::drawCurve (Graphics& g, const double* level, int n, Rectangle<float> plot,
-                              Colour colour, int size, bool fill) const
+                              Colour colour, int size, bool fill, float fillAlpha) const
 {
     if (n < 2) return;
     std::vector<Point<float>> p ((size_t) n);
@@ -116,7 +116,7 @@ void SpectrumView::drawCurve (Graphics& g, const double* level, int n, Rectangle
         f.lineTo (p.back().x, plot.getBottom() + 4);
         f.lineTo (p.front().x, plot.getBottom() + 4);
         f.closeSubPath();
-        g.setColour (colour.withMultipliedAlpha (0.5f));
+        g.setColour (colour.withMultipliedAlpha (fillAlpha));
         g.fillPath (f);
     }
     g.setColour (colour);
@@ -163,14 +163,24 @@ void SpectrumView::paint (Graphics& g)
 
     const auto cPeak = colors[ColorScheme::Peak], cHold = colors[ColorScheme::Hold], cAvg = colors[ColorScheme::Average];
 
+    // Peak as bars (classic) or as a smooth line / filled curve through every band (like SPAN's line;
+    // with 48 bands/oct the low end keeps its narrow peaks)
+    auto drawPeak = [&]
+    {
+        if (! settings.peakOn) return;
+        if (settings.peakShow == ShowAs::Bars) drawBars (model->peak, cPeak, true, 0);
+        else drawCurve (g, model->peak, n, plot, cPeak.withAlpha (1.0f).brighter (0.25f), 2, settings.peakShow == ShowAs::CurveFill, 0.6f);
+    };
     // like the original: peak goes on top of a filled hold curve, below it otherwise
-    if (settings.holdShow != ShowAs::CurveFill && settings.peakOn) drawBars (model->peak, cPeak, true, 0);
+    // a peak drawn as a curve goes over the hold line (it is the main trace, like SPAN's spectrum line)
+    const bool peakFirst = settings.holdShow != ShowAs::CurveFill && settings.peakShow == ShowAs::Bars;
+    if (peakFirst) drawPeak();
     if (settings.holdOn)
     {
         if (settings.holdShow == ShowAs::Bars) drawBars (model->hold, cHold, false, settings.holdSize);
         else drawCurve (g, model->hold, n, plot, cHold, settings.holdSize, settings.holdShow == ShowAs::CurveFill);
     }
-    if (settings.holdShow == ShowAs::CurveFill && settings.peakOn) drawBars (model->peak, cPeak, true, 0);
+    if (! peakFirst) drawPeak();
     if (settings.avgOn)
     {
         if (settings.avgShow == ShowAs::Bars) drawBars (model->avg, cAvg, false, settings.avgSize);

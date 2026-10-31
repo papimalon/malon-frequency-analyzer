@@ -116,11 +116,13 @@ ComboBox* SettingsContent::addCombo (const char* id, const String& label)
 SettingsContent::SettingsContent (MalonProcessor& p) : proc (p)
 {
     addHeader ("Input");
+    addCombo (ids::specMode, "Mode");
     addCombo (ids::channel, "Channel");
 
     addHeader ("Peak");
     addToggle (ids::peakOn, "Show");
     addSlider (ids::peakDecay, "Decay", "dB/s");
+    addCombo (ids::peakShow, "Show as");
 
     addHeader ("Average");
     addToggle (ids::avgOn, "Show");
@@ -142,6 +144,9 @@ SettingsContent::SettingsContent (MalonProcessor& p) : proc (p)
     addSlider (ids::ceiling, "Ceiling", "dB");
     addSlider (ids::range, "Range", "dB");
     addSlider (ids::grid, "Grid", "dB");
+
+    addHeader ("Metering");
+    addCombo (ids::meterScale, "Scale");
 
     addHeader ("Frequency");
     addCombo (ids::bands, "Bands / octave");

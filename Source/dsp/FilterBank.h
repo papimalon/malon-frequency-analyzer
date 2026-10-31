@@ -25,7 +25,7 @@
 namespace malon
 {
 
-constexpr int kMaxFilters = 256;  // 24 bands/octave (Hi-Res) over 22 Hz..29 kHz fits   // nBands + 1 filters must fit in here
+constexpr int kMaxFilters = 512;  // 48 bands/octave (Hi-Res) over 22 Hz..29 kHz fits (~498 bands)   // nBands + 1 filters must fit in here
 constexpr int kMaxBands   = kMaxFilters - 1;
 
 enum class ChannelMode { Left = 0, Right = 1, Both = 2, Mix = 3, Mid = 4, Side = 5 };
@@ -50,7 +50,7 @@ class FilterBank
 public:
     FilterBank();
 
-    /** (Re)design the bank. Resets all state. bandsPerOctave must be 3, 4, 6, 12 or 24 (12/24 = Hi-Res). */
+    /** (Re)design the bank. Resets all state. bandsPerOctave must be 3, 4, 6, 12, 24 or 48 (12/24/48 = Hi-Res). */
     void prepare (double sampleRate, int bandsPerOctave);
 
     /** Clears filter state and accumulators. */

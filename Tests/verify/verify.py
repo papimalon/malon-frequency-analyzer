@@ -97,6 +97,36 @@ extra = {'mix_rms300_end': (o['rms300L'], o['rms300R']), 'mix_corr_range': (o['c
          'mix_bar_minus_oldavg_1k_16k': oldgap, 'mix_bar_minus_newavg_1k_16k': newgap}
 row('Full mix (dembow premaster)', 'Bars minus Average 1-16 kHz (new)', newgap, 0.0, 1.0, 'avg sits in the bars')
 
+# 8) v1.2 metering scales (SPAN "Metering" selector): K-system is sine-referenced (AES17, +3.01 dB) RMS with a
+#    600 ms window shown relative to the K reference; LUFS/LU per BS.1770-4 / EBU R128 (LU = LUFS + 23)
+s = 10**(-20/20)*np.sin(2*np.pi*1000*t(10)); o = run(st(s)); sc = o['scales']
+exp = {'DBFS': -23.01, 'DBFS+3': -20.0, 'K-20': 0.0, 'K-14': -6.0, 'K-12': -8.0, 'K-20 C': 0.0, 'K-14 C': -6.0, 'K-12 C': -8.0,
+       'DBFS.30': -23.01, 'DBFS.15': -23.01, 'LUFS-ML': -20.0, 'LUFS-SL': -20.0, 'LU-ML': 3.0, 'LU-SL': 3.0}
+for k, v in exp.items():
+    row('Metering: 1k sine -20 dBFS', f'{k} meter value', sc[k]['bar'], v, 0.1, 'Katz K-system (-20 dBFS sine = 0 K-20)' if k.startswith('K') else ('BS.1770-4 / R128' if 'LU' in k else 'math'))
+row('Metering: 1k sine -20 dBFS', 'K-20 peak (dBFS -20 -> K units)', sc['K-20']['peak'], 0.0, 0.1, 'K-20: 0 dBFS = +20')
+row('Metering: 1k sine -20 dBFS', 'K-20 meter top (= 0 dBFS)', sc['K-20']['top'], 20.0, 0.01, 'Katz')
+row('Metering: 1k sine -20 dBFS', 'K-14 meter top (= 0 dBFS)', sc['K-14']['top'], 14.0, 0.01, 'Katz')
+row('Metering: 1k sine -20 dBFS', 'DBFS.30 / DBFS.15 range', sc['DBFS.30']['bottom'] + sc['DBFS.15']['bottom'] / 100, -30.15, 0.01, 'SPAN guide (30 / 15 dB range)')
+o = run(st(10**(-23/20)*np.sin(2*np.pi*1000*t(10)))); sc = o['scales']
+row('Metering: EBU 3341 #3/#4 (1k -23 dBFS)', 'LU-ML', sc['LU-ML']['bar'], 0.0, 0.1, 'EBU Tech 3341: momentary = -23 LUFS = 0 LU')
+row('Metering: EBU 3341 #3/#4 (1k -23 dBFS)', 'LU-SL', sc['LU-SL']['bar'], 0.0, 0.1, 'EBU Tech 3341: short-term = 0 LU')
+pk = pink(30*FS)*10**(-3.0103/20); o = run(st(pk, pink(30*FS)*10**(-3.0103/20))); sc = o['scales']
+row('Metering: pink noise -23.01 dBFS RMS', 'K-20 meter value', sc['K-20']['bar'], 0.0, 0.6, 'Katz: -20 dBFS (AES17) pink = 0 K-20')
+row('Metering: pink noise -23.01 dBFS RMS', 'LUFS-SL vs pyloudnorm short-term', sc['LUFS-SL']['bar'],
+    pyln.Meter(FS, block_size=3.0).integrated_loudness(st(pk[-3*FS:], pk[-3*FS:]).astype(np.float64)) , 0.6, 'pyloudnorm, last 3 s (L=R approx)')
+# 9) v1.2 HI-RES: 48 bands/octave
+x = 0.25*np.sin(2*np.pi*55*t(6)) + 0.25*np.sin(2*np.pi*58.27*t(6)); o = run(st(x), bpo=48)
+f48 = o['freqMin']*2**(np.arange(o['bands'])/48); hp = np.array(o['hold']); m = (f48 > 50) & (f48 < 64)
+idx = np.where(m)[0]; mx = [i for i in idx if hp[i] > hp[i-1] and hp[i] > hp[i+1] and hp[i] > hp[idx].max() - 10]
+row('HI-RES 48/oct: A1 55 Hz + A#1 58.27 Hz', 'Separate peaks between 50 and 64 Hz', len(mx), 2, 0, 'semitone apart = 4 bands at 48/oct')
+o = run(st(10**(-20/20)*np.sin(2*np.pi*1000*t(10))), bpo=48)
+row('HI-RES 48/oct: 1 kHz sine -20 dBFS', 'Peak band level (slope 0)', max(o['s0']['peak']), -20.0, 0.5, 'sine reads its amplitude')
+o = run(st(pink(60*FS), pink(60*FS)), bpo=48)
+row('HI-RES 48/oct: pink noise', 'Band power slope, raw bank (dB/oct)', bandslope(o, None, which='meanOld'), 0.0, 0.2, 'pink = equal power/oct')
+# the drawn line follows peak envelopes; narrow low bands have more envelope spread, so a small tilt (+0.9 vs +0.7 at 6/oct)
+row('HI-RES 48/oct: pink noise', 'Avg line slope at Slope 3 (dB/oct)', bandslope(o, 's3'), 0.0, 1.0, 'SPAN: pink flat at 3 (peak-envelope bias, wider tol)')
+
 w = max(len(r_[0]) for r_ in rows)
 print('| Test | Metric | Ours | Expected | Tol | Result | Reference |'); print('|---|---|---|---|---|---|---|')
 for r_ in rows: print('| ' + ' | '.join(r_) + ' |')

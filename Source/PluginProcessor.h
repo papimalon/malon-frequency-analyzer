@@ -10,11 +10,16 @@ namespace malon
 {
 
 class MalonProcessor : public juce::AudioProcessor,
-                       public juce::ChangeBroadcaster
+                       public juce::ChangeBroadcaster,
+                       private juce::AudioProcessorValueTreeState::Listener,
+                       private juce::AsyncUpdater
 {
 public:
     MalonProcessor();
-    ~MalonProcessor() override = default;
+    ~MalonProcessor() override;
+
+    /** Apply a newly chosen Mode / switch to Off after a manual change, now (normally async). */
+    void syncModeNow() { handleUpdateNowIfNeeded(); }
 
     // AudioProcessor
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -67,6 +72,9 @@ public:
 private:
     template <typename Sample> void processImpl (juce::AudioBuffer<Sample>&);
     void applyStateTree (const juce::ValueTree&);
+    void parameterChanged (const juce::String&, float) override { triggerAsyncUpdate(); }
+    void handleAsyncUpdate() override;
+    int lastAppliedMode = kModeDefault;
 
     FilterBank bank;
     LevelMeter meter;

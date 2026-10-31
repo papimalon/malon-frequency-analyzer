@@ -46,7 +46,7 @@ AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     choice ("freqGrid", "Frequency Grid", { "Decade", "Octave" }, 0);
     // 12 / 24 = Hi-Res: narrow bands that separate kicks, 808 notes and close tones (1000 vs 1050 Hz).
     // Appended at the end so saved sessions keep their old choice.
-    choice ("bands", "Bands per Octave", { "3", "4", "6", "12 (Hi-Res)", "24 (Hi-Res)" }, 2);
+    choice ("bands", "Bands per Octave", { "3", "4", "6", "12 (Hi-Res)", "24 (Hi-Res)", "48 (Hi-Res)" }, 2);
 
     // pro metering (true peak, RMS, loudness) - a separate, switchable section
     toggle ("meterOn", "Meters", true);
@@ -58,6 +58,12 @@ AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // 3 = pink noise flat and every band shows its true level (a tone reads its real amplitude);
     // 0 = SPAN's raw FFT view (pink noise falls 3 dB/oct).
     choice ("slope", "Spectrum Slope", { "0 dB/oct", "3 dB/oct (true band level)", "4.5 dB/oct (SPAN default)" }, 2);
+
+    // SPAN-like Modes: each one sets resolution, speed and which lines show; touching any of those
+    // settings by hand switches the Mode to Off (custom). Appended: old sessions keep their parameters.
+    { StringArray m; for (auto* s : kModeNames) m.add (s); choice ("specMode", "Mode", m, kModeDefault); }
+    choice ("peakShow", "Peak Show As", show, 0);
+    { StringArray m; for (auto* s : kMeterScaleNames) m.add (s); choice ("meterScale", "Metering", m, 0); }
 
     return l;
 }

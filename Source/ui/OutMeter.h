@@ -4,6 +4,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "MalonLookAndFeel.h"
+#include "MeterScale.h"
 #include <cmath>
 #include <functional>
 
@@ -15,7 +16,8 @@ class OutMeter : public juce::Component
 {
 public:
     static constexpr int preferredWidth = 52;
-    static constexpr double topDb = 0.0, bottomDb = -60.0;
+    void setScale (const MeterScaleSpec& s) { if (juce::String (s.unit) != spec.unit || s.top != spec.top || s.bottom != spec.bottom || s.loudness != spec.loudness) { spec = s; reset(); } }
+    const MeterScaleSpec& getScale() const { return spec; }
 
     /** peakDb: live (decaying) true peak per channel; rmsDb: 300 ms RMS per channel. */
     void setLevels (const double peakDb[2], const double rmsDb[2], int channels, bool clipped, double dtMs)
@@ -26,7 +28,8 @@ public:
             pk[c] = peakDb[c]; rms[c] = rmsDb[c];
             holdLeft[c] -= dtMs;
             if (holdLeft[c] <= 0.0) hold[c] -= 20.0 * dtMs / 1000.0;          // 2 s hold, then 20 dB/s fall
-            if (std::isfinite (pk[c]) && pk[c] >= hold[c]) { hold[c] = pk[c]; holdLeft[c] = 2000.0; }
+            const double src = spec.loudness ? rms[c] : pk[c];       // loudness scales hold the loudness
+            if (std::isfinite (src) && src >= hold[c]) { hold[c] = src; holdLeft[c] = 2000.0; }
             hold[c] = std::max (hold[c], -200.0);
         }
         clip = clipped;
@@ -48,7 +51,9 @@ public:
         // header: OUT + clip LED
         g.setFont (uiFont (9.5f, true).withExtraKerningFactor (0.12f));
         g.setColour (palette::dim);
-        g.drawText ("OUT", b.withHeight (14.0f).withTrimmedLeft (4.0f), Justification::centredLeft, false);
+        const bool plain = juce::String (spec.unit) == "dBFS";
+        if (! plain) g.setFont (uiFont (8.5f, true));
+        g.drawText (plain ? juce::String ("OUT") : juce::String (spec.unit), b.withHeight (14.0f).withTrimmedLeft (4.0f), Justification::centredLeft, false);
         auto led = ledArea();
         g.setColour (clip ? palette::red : palette::red.withAlpha (0.18f));
         g.fillEllipse (led);
@@ -56,12 +61,13 @@ public:
         const auto bars = barArea();
         const float bw = (bars.getWidth() - 2.0f) / 2.0f;
         g.setFont (uiFont (8.5f));
-        for (int db = 0; db >= (int) bottomDb; db -= 6)            // scale on the left
+        const int tk = spec.tick, topI = (int) std::floor (spec.top / tk) * tk;
+        for (int db = topI; db >= (int) spec.bottom; db -= tk)    // scale on the left
         {
             const float y = dbToY ((double) db, bars);
             g.setColour (Colours::white.withAlpha (db == 0 ? 0.25f : 0.08f));
             g.drawHorizontalLine ((int) y, bars.getX(), bars.getRight());
-            if (db % 12 == 0)
+            if (db % (2 * tk) == 0)
             {
                 g.setColour (palette::dim);
                 g.drawText (String (db), Rectangle<float> (0, y - 6, bars.getX() - 2, 12), Justification::centredRight, false);
@@ -74,16 +80,16 @@ public:
             g.setColour (Colours::black.withAlpha (0.35f)); g.fillRect (col);
             auto fill = [&] (double db, Colour cl)
             {
-                if (! std::isfinite (db) || db <= bottomDb) return;
+                if (! std::isfinite (db) || db <= spec.bottom) return;
                 const float y = dbToY (db, bars);
                 g.setColour (cl); g.fillRect (col.withTop (y));
             };
             fill (pk[src],  palette::blue.withAlpha (0.45f));         // peak, light
             fill (rms[src], palette::blue);                           // RMS, solid blue (house colour)
-            if (hold[src] > bottomDb)
+            if (hold[src] > spec.bottom)
             {
                 const float y = dbToY (hold[src], bars);
-                g.setColour (hold[src] >= 0.0 ? palette::red : Colours::white.withAlpha (0.9f));
+                g.setColour (hold[src] >= spec.redAt ? palette::red : Colours::white.withAlpha (0.9f));
                 g.fillRect (col.getX(), y - 1.0f, col.getWidth(), 2.0f);
             }
             g.setColour (palette::dim);
@@ -91,7 +97,7 @@ public:
         }
         // numeric peak hold (max of L/R)
         const double hmax = std::max (hold[0], nch > 1 ? hold[1] : hold[0]);
-        g.setColour (hmax >= 0.0 ? palette::red : palette::text);
+        g.setColour (hmax >= spec.redAt ? palette::red : palette::text);
         g.setFont (uiFont (9.0f, true));
         g.drawText (hmax <= -150.0 ? String ("-inf") : String (hmax, 1), b.removeFromBottom (13.0f), Justification::centred, false);
     }
@@ -105,13 +111,14 @@ private:
     }
     float dbToY (double db, juce::Rectangle<float> r) const
     {
-        const double t = (topDb - juce::jlimit (bottomDb, topDb, db)) / (topDb - bottomDb);
+        const double t = (spec.top - juce::jlimit (spec.bottom, spec.top, db)) / (spec.top - spec.bottom);
         return r.getY() + (float) t * r.getHeight();
     }
 
     double pk[2] { -200.0, -200.0 }, rms[2] { -200.0, -200.0 }, hold[2] { -200.0, -200.0 }, holdLeft[2] {};
     int nch = 2;
     bool clip = false;
+    MeterScaleSpec spec = meterScaleSpec (0);
 };
 
 /** SPAN-style correlation meter: "Correlation" title, gradient track (-1 red .. 0 yellow .. +1 blue),

@@ -5,6 +5,7 @@
 #include "../../Source/dsp/FilterBank.h"
 #include "../../Source/dsp/Ballistics.h"
 #include "../../Source/dsp/LevelMeter.h"
+#include "../../Source/ui/MeterScale.h"
 #include <cstdio>
 #include <vector>
 #include <algorithm>
@@ -76,6 +77,15 @@ int main (int argc, char** argv)
                  ro.rmsDb[0], ro.rmsDb[1], r3.rmsDb[0], r3.rmsDb[1], ro.rmsFastDb[0],
                  ro.truePeakMaxDb, ro.samplePeakMaxDb, ro.integrated, ro.momentaryMax,
                  corrValid ? "true" : "false", corrLast, corrMin, corrMax);
+    // metering scales (Out meter value for every SPAN-style scale, from the end-of-file readout; L channel)
+    std::printf ("\"rmsKL\":%.3f,\"momentary\":%.3f,\"shortTerm\":%.3f,\"scales\":{", ro.rmsKDb[0], ro.momentary, ro.shortTerm);
+    for (int i = 0; i < msCount; ++i)
+    {
+        const auto mv = meterValues (meterScaleSpec (i), ro.rmsFastDb[0], ro.rmsKDb[0], ro.truePeakMaxDb, ro.momentary, ro.shortTerm);
+        std::printf ("%s\"%s\":{\"bar\":%.3f,\"peak\":%.3f,\"top\":%.1f,\"bottom\":%.1f}", i ? "," : "", kMeterScaleNames[i],
+                     mv.bar, std::isfinite (mv.peak) ? mv.peak : -999.0, meterScaleSpec (i).top, meterScaleSpec (i).bottom);
+    }
+    std::printf ("},");
     const int nb = dm[0].numBands;
     std::printf ("\"freqMin\":%.4f,\"bpo\":%d,\"bands\":%d", dm[0].freqMin, bpo, nb);
     const char* names[3] = { "s0", "s3", "s45" };

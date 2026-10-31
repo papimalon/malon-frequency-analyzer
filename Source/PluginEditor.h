@@ -52,6 +52,8 @@ public:
     int getViewMode() const noexcept { return viewMode; }
     SpectrumView& getView() noexcept { return view; }
     bool isMeterVisible() const noexcept { return strip.isVisible(); }
+    juce::ComboBox& getModeBox() noexcept { return specModeBox; }
+    juce::Button& getHiResButton() noexcept { return hiResButton; }
 
 private:
     void timerCallback() override;
@@ -76,7 +78,8 @@ private:
     juce::TextButton hiResButton { "HI-RES" };
     juce::TextButton holdButton { "HOLD" }, avgButton { "AVG" };
     std::unique_ptr<juce::ButtonParameterAttachment> holdAtt, avgAtt;
-    juce::ComboBox slopeBox;
+    juce::ComboBox slopeBox, specModeBox;
+    std::unique_ptr<juce::ComboBoxParameterAttachment> specModeAtt;
     std::unique_ptr<juce::ComboBoxParameterAttachment> slopeAtt;
     OutMeter outMeter;
 public:

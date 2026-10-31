@@ -5,6 +5,7 @@
 #include "../PluginProcessor.h"
 #include "MalonLookAndFeel.h"
 #include "OutMeter.h"
+#include "MeterScale.h"
 
 namespace malon
 {
@@ -38,7 +39,9 @@ private:
     LevelMeter::Readout ro;
     double live[2] = { -200.0, -200.0 };
 
-    juce::ComboBox rmsBox;
+    juce::ComboBox rmsBox, scaleBox;
+    std::unique_ptr<juce::ComboBoxParameterAttachment> scaleAtt;
+    std::atomic<float>* pScale = nullptr;
     juce::TextButton resetButton { "Reset" };
     std::unique_ptr<juce::ComboBoxParameterAttachment> rmsAtt;
     juce::Rectangle<int> ledArea;

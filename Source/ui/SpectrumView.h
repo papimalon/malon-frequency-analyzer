@@ -12,7 +12,7 @@ namespace malon
 struct ViewSettings
 {
     bool peakOn = true, holdOn = true, avgOn = true;
-    ShowAs holdShow = ShowAs::Curve, avgShow = ShowAs::Curve;
+    ShowAs holdShow = ShowAs::Curve, avgShow = ShowAs::Curve, peakShow = ShowAs::Bars;
     int holdSize = 2, avgSize = 3;
     double ceiling = 3, range = 51, grid = 5;
     bool octaveGrid = false;
@@ -42,7 +42,7 @@ public:
 private:
     void drawGrid (juce::Graphics&, juce::Rectangle<float> plot, int numBands);
     void drawCurve (juce::Graphics&, const double* levelDb, int n, juce::Rectangle<float> plot,
-                    juce::Colour colour, int size, bool fill) const;
+                    juce::Colour colour, int size, bool fill, float fillAlpha = 0.5f) const;
     float levelToY (double db, juce::Rectangle<float> plot) const;
     float bandX (int i, int n, juce::Rectangle<float> plot) const;
 

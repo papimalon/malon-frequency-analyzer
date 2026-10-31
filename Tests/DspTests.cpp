@@ -69,7 +69,7 @@ static void testBandLayout()
 {
     std::printf("[layout] band counts and ranges\n");
     const double rates[] = { 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000 };
-    for (int bpo : { 3, 4, 6, 12, 24 })
+    for (int bpo : { 3, 4, 6, 12, 24, 48 })
         for (double fs : rates)
         {
             FilterBank fb; fb.prepare (fs, bpo);
@@ -95,7 +95,7 @@ static void testSineAtBandCentres()
 {
     std::printf("[sine] amplitude-1 sine at every band centre\n");
     const double fs = 48000;
-    for (int bpo : { 3, 4, 6, 12, 24 })
+    for (int bpo : { 3, 4, 6, 12, 24, 48 })
     {
         FilterBank probe; probe.prepare (fs, bpo);
         double worstErr = 0, worstMargin = 1e9;
@@ -161,11 +161,12 @@ static void testSweep()
 {
     std::printf("[sweep] log sweep 25 Hz -> 18 kHz, 12 s\n");
     for (double fs : { 44100.0, 48000.0, 96000.0 })
-        for (int bpo : { 3, 4, 6, 12, 24 })
+        for (int bpo : { 3, 4, 6, 12, 24, 48 })
         {
             // a narrow band needs the tone to stay inside it long enough to build up, so Hi-Res
             // sweeps proportionally slower (same time per band as 6 bpo)
-            const double f0 = 25, f1 = 18000, T = 12.0 * std::max (1.0, bpo / 6.0);
+            // 48 bpo bands (0.5 Hz wide at 50 Hz) need twice that again to reach full level
+            const double f0 = 25, f1 = 18000, T = 12.0 * std::max (1.0, bpo / 6.0) * (bpo >= 48 ? 2.0 : 1.0);
             const size_t N = (size_t) (fs * T);
             std::vector<float> s (N);
             const double Lk = T / std::log (f1 / f0);
@@ -238,7 +239,7 @@ static void testNoiseSlope()
         b3 = 0.86650 * b3 + x * 0.3104856; b4 = 0.55000 * b4 + x * 0.5329522; b5 = -0.7616 * b5 - x * 0.0168980;
         p[i] = float ((b0 + b1 + b2 + b3 + b4 + b5 + b6 + x * 0.5362) * 0.3); b6 = x * 0.115926;
     }
-    for (int bpo : { 3, 4, 6, 12, 24 })
+    for (int bpo : { 3, 4, 6, 12, 24, 48 })
     {
         auto bandAvg = [&] (const std::vector<float>& s)
         {
@@ -272,8 +273,10 @@ static void testNoiseSlope()
         CHECK_MSG (std::fabs (slope - 3.01) < 0.25, "bpo %d slope %.2f", bpo, slope);
         // a 1/24-octave band at 100 Hz is only ~3 Hz wide, so 20 s of noise gives it few independent
         // samples: allow the statistical scatter that implies at 24 bpo
-        const double spreadMax = bpo >= 24 ? 1.8 : 0.8;
-        CHECK_MSG (eHi - eLo < spreadMax && eLo > 1.0 && eHi < 3.0, "bpo %d noise level offset %.2f..%.2f", bpo, eLo, eHi);
+        const double spreadMax = bpo >= 48 ? 2.6 : bpo >= 24 ? 1.8 : 0.8;
+        // 48 bpo: ~0.4 Hz-wide bands at 100 Hz get very few independent noise samples in 20 s
+        const double eMin = bpo >= 48 ? 0.5 : 1.0, eMax = bpo >= 48 ? 3.5 : 3.0;
+        CHECK_MSG (eHi - eLo < spreadMax && eLo > eMin && eHi < eMax, "bpo %d noise level offset %.2f..%.2f", bpo, eLo, eHi);
 
         auto [rp, vp] = bandAvg (p);
         double lo = 300, hi = -300;
@@ -500,6 +503,32 @@ static void testHiRes()
         }
         std::printf("  24 bpo: E1 + F1 together -> %d separate maxima between 35 and 50 Hz\n", maxima);
         CHECK_MSG (maxima == 2, "E1+F1 gave %d maxima", maxima);
+    }
+    {   // 48 bpo (HI-RES): 55 Hz and 58.27 Hz (A1 / A#1) must be separate maxima, CPU at 96 kHz
+        const double fs2 = 48000;
+        FilterBank fb; fb.prepare (fs2, 48);
+        std::vector<float> s ((size_t) (fs2 * 3));
+        for (size_t i = 0; i < s.size(); ++i) s[i] = float (0.5 * std::sin (2 * kPi * 55.0 * i / fs2) + 0.5 * std::sin (2 * kPi * 58.27 * i / fs2));
+        fb.process (s.data(), s.data(), (int) s.size() / 2, ChannelMode::Both);
+        Readout d; fb.read (d);
+        fb.process (s.data() + s.size() / 2, s.data() + s.size() / 2, (int) s.size() / 2, ChannelMode::Both);
+        Readout r; fb.read (r);
+        int maxima = 0;
+        for (int b = 1; b < r.numBands - 1; ++b)
+        {
+            const double f = bandCentre (r, b); if (f < 50 || f > 64) continue;
+            if (peakDb (r, b) > peakDb (r, b - 1) && peakDb (r, b) > peakDb (r, b + 1) && peakDb (r, b) > -12) ++maxima;
+        }
+        std::printf("  48 bpo: 55 + 58.27 Hz together -> %d separate maxima between 50 and 64 Hz\n", maxima);
+        CHECK_MSG (maxima == 2, "48 bpo 55+58 Hz gave %d maxima", maxima);
+
+        FilterBank f96; f96.prepare (96000, 48);
+        std::vector<float> n ((size_t) 96000 * 10, 0.1f);
+        const auto t0 = std::chrono::steady_clock::now();
+        feed (f96, n, n, ChannelMode::Both);
+        const double secs = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
+        std::printf("  48 bpo, 96 kHz stereo: %.1f %% of one core (10 s of audio in %.3f s)\n", secs * 10.0, secs);
+        CHECK_MSG (secs < 3.0, "48 bpo too slow: %.2f s for 10 s", secs);
     }
     {   // CPU: 10 s of stereo at 96 kHz through the 24 bpo bank must run far faster than real time
         FilterBank fb; fb.prepare (96000, 24);

@@ -1,6 +1,7 @@
 // Malon Frequency Analyzer - Copyright (C) 2026 MUSICA MALON, AGPL-3.0-or-later (see LICENSE)
 #include "PluginEditor.h"
 #include "ui/Credits.h"
+#include "Modes.h"
 
 namespace malon
 {
@@ -99,14 +100,16 @@ MalonEditor::MalonEditor (MalonProcessor& p)
         addAndMakeVisible (b);
     }
     hiResButton.setClickingTogglesState (true);
-    hiResButton.setTooltip ("High resolution: 24 bands per octave, so kicks, 808 notes and close tones show as separate peaks");
+    hiResButton.setTooltip ("High resolution: 48 bands per octave drawn as a filled curve, so kicks, 808 notes and close tones show as sharp, separate peaks");
     hiResButton.onClick = [this]
     {
-        if (auto* prm = proc.apvts.getParameter (ids::bands))
-        {
-            const float idx = hiResButton.getToggleState() ? 4.0f : 2.0f;   // 24 bpo or the default 6 bpo
-            prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->convertTo0to1 (idx)); prm->endChangeGesture();
-        }
+        const bool on = hiResButton.getToggleState();
+        const int m = roundToInt (proc.apvts.getRawParameterValue (ids::specMode)->load());
+        // Default <-> High Res go through the Mode menu; in any other Mode / Off only the resolution changes
+        if (on && m == 1)                    setParam (proc.apvts, ids::specMode, 3.0f);
+        else if (! on && (m == 3 || m == 4)) setParam (proc.apvts, ids::specMode, 1.0f);
+        else setParam (proc.apvts, ids::bands, (float) (on ? kBandsHiResIndex : kBandsDefaultIndex));
+        proc.syncModeNow();
     };
     addAndMakeVisible (hiResButton);
     for (auto* b : { &holdButton, &avgButton }) { b->setClickingTogglesState (true); addAndMakeVisible (*b); }
@@ -117,6 +120,10 @@ MalonEditor::MalonEditor (MalonProcessor& p)
     slopeBox.addItemList ({ "Slope 0", "Slope 3", "Slope 4.5" }, 1);
     slopeBox.setTooltip ("Spectrum slope in dB/octave around 1 kHz, same scale as SPAN. 4.5 (SPAN default): a balanced mix looks flat. 3: pink noise flat, tones read their true level at any frequency. 0: SPAN raw view");
     addAndMakeVisible (slopeBox);
+    for (int i = 0; i < 8; ++i) specModeBox.addItem (i == 0 ? String ("Mode: Off") : String ("Mode: ") + kModeNames[i], i + 1);
+    specModeBox.setTooltip ("Spectrum Mode, like SPAN: Default, Slower (calmer), High Res (48 bands/oct curve), 96 kHz, Master (slow tonal balance), Average (long-term only), Avg+Max (average + all-time max). Changing a setting by hand switches to Off (custom)");
+    addAndMakeVisible (specModeBox);
+    specModeAtt = std::make_unique<ComboBoxParameterAttachment> (*proc.apvts.getParameter (ids::specMode), specModeBox);
     slopeAtt = std::make_unique<ComboBoxParameterAttachment> (*proc.apvts.getParameter (ids::slope), slopeBox);
     addAndMakeVisible (outMeter);
     outMeter.onClipClicked = [this] { resetMeters(); };
@@ -205,8 +212,11 @@ void MalonEditor::resized()
         hiResButton.setBounds (row.removeFromRight (64 + 8).withTrimmedRight (8));
         avgButton.setBounds (row.removeFromRight (46 + 4).withTrimmedRight (4));
         holdButton.setBounds (row.removeFromRight (52 + 4).withTrimmedRight (4));
-        slopeBox.setVisible (row.getWidth() >= 100);
+        const bool spectrum = viewMode <= 0;
+        slopeBox.setVisible (spectrum && row.getWidth() >= 100);
         slopeBox.setBounds (row.removeFromRight (92 + 6).withTrimmedRight (6));
+        specModeBox.setVisible (spectrum && row.getWidth() >= 140);
+        specModeBox.setBounds (row.removeFromRight (132 + 6).withTrimmedRight (6));
     }
 
     if (settingsOpen)
@@ -298,6 +308,7 @@ void MalonEditor::applyAllSettings()
     ViewSettings s;
     s.peakOn = v (ids::peakOn) > 0.5;  s.holdOn = v (ids::holdOn) > 0.5;  s.avgOn = v (ids::avgOn) > 0.5;
     s.holdShow = (ShowAs) (int) v (ids::holdShow);  s.avgShow = (ShowAs) (int) v (ids::avgShow);
+    s.peakShow = (ShowAs) (int) v (ids::peakShow);
     s.holdSize = (int) v (ids::holdSize);  s.avgSize = (int) v (ids::avgSize);
     s.ceiling = v (ids::ceiling);  s.range = v (ids::range);  s.grid = v (ids::grid);
     s.octaveGrid = (int) v (ids::freqGrid) == 1;
@@ -335,7 +346,15 @@ void MalonEditor::pollNow (double dtMs)
         if (! model.frozen)
         {
             const double off[2] = { -200.0, -200.0 };
-            outMeter.setLevels (meterOn ? liveDb : off, meterOn ? ro.rmsFastDb : off, ro.channels, meterOn && ro.clipped, dtMs);
+            const auto sp = meterScaleSpec (roundToInt (proc.apvts.getRawParameterValue (ids::meterScale)->load()));
+            outMeter.setScale (sp);
+            double bar[2], pkv[2];
+            for (int c = 0; c < 2; ++c)
+            {
+                const auto mv = meterValues (sp, ro.rmsFastDb[c], ro.rmsKDb[c], liveDb[c], ro.momentary, ro.shortTerm);
+                bar[c] = mv.bar; pkv[c] = mv.peak;
+            }
+            outMeter.setLevels (meterOn ? pkv : off, meterOn ? bar : off, ro.channels, meterOn && ro.clipped, dtMs);
         }
         if (strip.isVisible())
         {
@@ -366,7 +385,8 @@ void MalonEditor::updateViewMode()
     if (m != 0) history.setMode (m - 1);
     channelBox.setEnabled (m == 0);
     hiResButton.setVisible (m == 0);
-    holdButton.setVisible (m == 0); avgButton.setVisible (m == 0); slopeBox.setVisible (m == 0);
+    holdButton.setVisible (m == 0); avgButton.setVisible (m == 0);
+    resized();
 }
 
 void MalonEditor::timerCallback()
