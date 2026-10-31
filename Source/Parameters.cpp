@@ -61,9 +61,11 @@ AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 
     // SPAN-like Modes: each one sets resolution, speed and which lines show; touching any of those
     // settings by hand switches the Mode to Off (custom). Appended: old sessions keep their parameters.
-    { StringArray m; for (auto* s : kModeNames) m.add (s); choice ("specMode", "Mode", m, kModeDefault); }
+    { StringArray m; for (auto* s : kModeNames) m.add (s); choice ("specMode", "View", m, kModeDefault); }
     choice ("peakShow", "Peak Show As", show, 0);
     { StringArray m; for (auto* s : kMeterScaleNames) m.add (s); choice ("meterScale", "Metering", m, 0); }
+    // spectrum floor (bottom of the dB axis); replaces "range" in the UI (range = ceiling - floor)
+    choice ("dbFloor", "Floor", { "-60 dB", "-72 dB", "-90 dB" }, 1);
 
     return l;
 }

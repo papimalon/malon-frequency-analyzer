@@ -35,7 +35,7 @@ MeterStrip::MeterStrip (MalonProcessor& p)
 
 MeterStrip::Layout MeterStrip::layout() const
 {
-    const bool narrow = getWidth() < 680;
+    const bool narrow = getWidth() < 820;
     auto r = getLocalBounds().reduced (narrow ? 12 : 16, 10);
     Layout l;
     l.ctl = r.removeFromRight (narrow ? 80 : 96);
@@ -107,9 +107,10 @@ void MeterStrip::paint (Graphics& g)
         g.setFont (uiFont (10.0f).withExtraKerningFactor (0.16f));
         g.drawText (title, col.getX(), col.getY(), col.getWidth(), 14, Justification::centredLeft, false);
     };
-    auto big = [&] (Rectangle<int> col, double value, const char* unit, Colour c)
+    auto big = [&] (Rectangle<int> col, double value, const String& unit, Colour c, bool sign = false)
     {
-        const auto txt = fmt (value);
+        auto txt = fmt (value);
+        if (sign && std::isfinite (value) && value > -150.0 && ! txt.startsWithChar ('-')) txt = "+" + txt;
         const auto f = uiFont (26.0f, true);
         g.setColour (c);
         g.setFont (f);
@@ -164,8 +165,11 @@ void MeterStrip::paint (Graphics& g)
         // RMS statistic follows the metering scale bias (DBFS+3, K-system), like SPAN's "RMS" stat
         const auto sp = meterScaleSpec (pScale != nullptr ? juce::roundToInt (pScale->load()) : 0);
         const double bias = sp.loudness ? 0.0 : sp.rmsBias;
-        const char* unit = sp.loudness ? "dBFS" : sp.unit;
-        big (l.rms, ro.rmsCombinedDb + bias, unit, text);
+        if (sp.loudness || sp.rmsBias == 0.0) big (l.rms, ro.rmsCombinedDb, "dBFS", text);
+        else
+        {   // biased scales get context: "+3.2  dB (K-20)"
+            big (l.rms, ro.rmsCombinedDb + bias, String ("dB (") + sp.unit + ")", text, true);
+        }
         small (Rectangle<int> (l.rms.getX(), l.rms.getY() + 54, l.rms.getWidth(), 16),
                stereo ? "L " + fmt (ro.rmsDb[0] + bias) + "     R " + fmt (ro.rmsDb[1] + bias) : "M " + fmt (ro.rmsDb[0] + bias));
     }
@@ -175,10 +179,16 @@ void MeterStrip::paint (Graphics& g)
         header (l.loud, "LOUDNESS");
         const int cw = l.loud.getWidth() / 3;
         const bool tight = cw < 82;
-        big (l.loud, ro.integrated, tight ? "LUFS  INT" : "LUFS  INTEGRATED", text);
+        // LU scales: everything relative to the EBU R128 target, with context, e.g. "+4.3  LU INT (R128)"
+        const auto lsp = meterScaleSpec (pScale != nullptr ? juce::roundToInt (pScale->load()) : 0);
+        const bool lu = lsp.loudness && lsp.rmsBias != 0.0;
+        const double lo = lu ? 23.0 : 0.0;
+        auto lfmt = [&] (double v) { auto t = fmt (v + lo); if (lu && std::isfinite (v) && v + lo > 0.0) t = "+" + t; return lu && std::isfinite (v) ? t + " LU" : t; };
+        if (lu) big (l.loud, ro.integrated + lo, tight ? "LU INT" : "LU  INT (R128, -23 LUFS = 0)", text, true);
+        else    big (l.loud, ro.integrated, tight ? "LUFS  INT" : "LUFS  INTEGRATED", text);
         struct Cell { const char* name; String value; };
-        const Cell cells[3] = { { tight ? "MOM" : "MOMENTARY", fmt (ro.momentary) },
-                                { tight ? "SHORT" : "SHORT-TERM", fmt (ro.shortTerm) },
+        const Cell cells[3] = { { tight ? "MOM" : "MOMENTARY", lfmt (ro.momentary) },
+                                { tight ? "SHORT" : "SHORT-TERM", lfmt (ro.shortTerm) },
                                 { tight ? "LRA" : "RANGE", fmt (ro.loudnessRange) + (std::isfinite (ro.loudnessRange) ? " LU" : "") } };
         for (int i = 0; i < 3; ++i)
         {

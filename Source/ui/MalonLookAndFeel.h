@@ -101,7 +101,7 @@ public:
     void drawToggleButton (juce::Graphics& g, juce::ToggleButton& b, bool, bool) override
     {
         using namespace palette;
-        auto r = b.getLocalBounds().toFloat().withSizeKeepingCentre (30.0f, 16.0f).withX ((float) b.getWidth() - 32.0f);
+        auto r = b.getLocalBounds().toFloat().withSizeKeepingCentre (30.0f, 16.0f).withX (2.0f);   // aligned with sliders / menus
         const bool on = b.getToggleState();
         g.setColour (on ? red : juce::Colour (0xFF1B1F2A));
         g.fillRoundedRectangle (r, 8.0f);
@@ -133,13 +133,15 @@ public:
     void drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour&, bool over, bool down) override
     {
         auto r = b.getLocalBounds().toFloat().reduced (0.5f);
+        const bool neutral = (bool) b.getProperties().getWithDefault ("neutral", false);
         const bool toggled = b.getToggleState();
-        auto fill = toggled ? palette::red : juce::Colour (0xFF12151D);
+        const bool accent = toggled && ! neutral;          // the accent colour means "this toggle is on", nothing else
+        auto fill = accent ? palette::red : toggled ? juce::Colour (0xFF262B38) : juce::Colour (0xFF12151D);
         if (over) fill = fill.brighter (0.12f);
         if (down) fill = fill.brighter (0.25f);
         g.setColour (fill);
         g.fillRoundedRectangle (r, 5.0f);
-        g.setColour (toggled ? palette::red : palette::hairline);
+        g.setColour (accent ? palette::red : toggled ? juce::Colour (0x40FFFFFF) : palette::hairline);
         g.drawRoundedRectangle (r, 5.0f, 1.0f);
     }
 };

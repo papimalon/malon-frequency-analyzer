@@ -29,7 +29,7 @@ namespace
 
 Rectangle<float> SpectrumView::getPlotArea() const
 {
-    const float padL = 36.0f, padR = 36.0f, padT = 16.0f, padB = 24.0f;
+    const float padL = 36.0f, padR = 8.0f, padT = 22.0f, padB = 24.0f;
     return getLocalBounds().toFloat().withTrimmedLeft (padL).withTrimmedRight (padR)
                                      .withTrimmedTop (padT).withTrimmedBottom (padB);
 }
@@ -54,6 +54,9 @@ void SpectrumView::drawGrid (Graphics& g, Rectangle<float> plot, int n)
     const int top = (int) settings.ceiling, grid = juce::jmax (1, (int) settings.grid), range = (int) settings.range;
     int level = top - top % grid;
     if (level > top) level -= grid;
+    // label every line when there is room, else every 2nd / 3rd ... (no crowded axis in small windows)
+    const float pxPerLine = (float) grid * plot.getHeight() / (float) settings.range;
+    const int labelEvery = juce::jmax (1, (int) std::ceil (15.0f / juce::jmax (1.0f, pxPerLine)));
     while (level > top - range)
     {
         const float y = std::round (levelToY ((double) level, plot)) + 0.5f;
@@ -63,8 +66,8 @@ void SpectrumView::drawGrid (Graphics& g, Rectangle<float> plot, int n)
             g.drawHorizontalLine ((int) y, plot.getX(), plot.getRight());
         }
         g.setColour (colors[ColorScheme::GridLabel]);
-        g.drawText (String (level), Rectangle<float> (0, y - 7, plot.getX() - 6, 14), Justification::centredRight, false);
-        g.drawText (String (level), Rectangle<float> (plot.getRight() + 6, y - 7, 30, 14), Justification::centredLeft, false);
+        if (((level % (grid * labelEvery)) + grid * labelEvery) % (grid * labelEvery) == 0)
+            g.drawText (String (level), Rectangle<float> (0, y - 7, plot.getX() - 6, 14), Justification::centredRight, false);
         level -= grid;
     }
 
@@ -141,6 +144,50 @@ void SpectrumView::paint (Graphics& g)
     g.setColour (colors[ColorScheme::GridBorder]);
     g.drawRect (plot.expanded (0.5f), 1.0f);
 
+    const auto cPeak = colors[ColorScheme::Peak], cHold = colors[ColorScheme::Hold], cAvg = colors[ColorScheme::Average];
+    // labels in the strip above the plot (outside the plot clip)
+    {
+    // legend: which colour is which (only the traces that are on)
+    {
+        struct Item { const char* name; Colour c; bool bar; };
+        Item items[3]; int count = 0;
+        if (settings.peakOn) items[count++] = { "PEAK", cPeak, true };
+        if (settings.holdOn) items[count++] = { "HOLD", cHold, false };
+        if (settings.avgOn)  items[count++] = { "AVERAGE", cAvg, false };
+        float x = plot.getX() + 10.0f;
+        const float y = plot.getY() - 16.0f;       // in the strip above the plot, clear of the grid
+        if (settings.frozen) x += 62.0f;
+        g.setFont (uiFont (9.5f).withExtraKerningFactor (0.12f));
+        for (int i = 0; i < count; ++i)
+        {
+            g.setColour (items[i].c.withAlpha (1.0f));
+            if (items[i].bar) g.fillRect (x, y + 1.0f, 8.0f, 8.0f);
+            else              g.fillRoundedRectangle (x, y + 4.0f, 12.0f, 2.0f, 1.0f);
+            const float sw = items[i].bar ? 8.0f : 12.0f;
+            g.setColour (colors[ColorScheme::GridLabel]);
+            const float tw = (float) GlyphArrangement::getStringWidthInt (g.getCurrentFont(), items[i].name);
+            g.drawText (items[i].name, Rectangle<float> (x + sw + 5.0f, y - 1.0f, tw + 4.0f, 12.0f), Justification::centredLeft, false);
+            x += sw + 5.0f + tw + 14.0f;
+        }
+    }
+
+    // scale label: what the dB axis means with the current tilt
+    {
+        const String sl = "dB  slope " + String (settings.slope, settings.slope == std::floor (settings.slope) ? 0 : 1)
+                          + " dB/oct @ 1 kHz" + (settings.slope == 3.0 ? "  (true level)" : "");
+        g.setFont (uiFont (9.5f));
+        g.setColour (colors[ColorScheme::GridLabel]);
+        g.drawText (sl, Rectangle<float> (plot.getRight() - 230.0f, plot.getY() - 17.0f, 230.0f, 12.0f), Justification::centredRight, false);
+    }
+
+    if (settings.frozen)
+    {
+        g.setColour (palette::red);
+        g.setFont (uiFont (10.5f, true));
+        g.drawText ("FROZEN", Rectangle<float> (plot.getX() + 4, plot.getY() - 18, 80, 14), Justification::centredLeft, false);
+    }
+    }
+
     // data (clipped to the plot)
     Graphics::ScopedSaveState ss (g);
     g.reduceClipRegion (plot.toNearestIntEdges());
@@ -161,7 +208,6 @@ void SpectrumView::paint (Graphics& g)
         }
     };
 
-    const auto cPeak = colors[ColorScheme::Peak], cHold = colors[ColorScheme::Hold], cAvg = colors[ColorScheme::Average];
 
     // Peak as bars (classic) or as a smooth line / filled curve through every band (like SPAN's line;
     // with 48 bands/oct the low end keeps its narrow peaks)
@@ -175,41 +221,20 @@ void SpectrumView::paint (Graphics& g)
     // a peak drawn as a curve goes over the hold line (it is the main trace, like SPAN's spectrum line)
     const bool peakFirst = settings.holdShow != ShowAs::CurveFill && settings.peakShow == ShowAs::Bars;
     if (peakFirst) drawPeak();
+    // Curve peak (High Res): peak is the main filled trace, hold dimmed behind the average, average a
+    // thin line on top, so the three don't fight. Bars keep the classic look.
+    const bool curvePeak = settings.peakShow != ShowAs::Bars;
+    const auto holdCol = curvePeak ? cHold.withMultipliedAlpha (0.45f) : cHold;
     if (settings.holdOn)
     {
-        if (settings.holdShow == ShowAs::Bars) drawBars (model->hold, cHold, false, settings.holdSize);
-        else drawCurve (g, model->hold, n, plot, cHold, settings.holdSize, settings.holdShow == ShowAs::CurveFill);
+        if (settings.holdShow == ShowAs::Bars) drawBars (model->hold, holdCol, false, settings.holdSize);
+        else drawCurve (g, model->hold, n, plot, holdCol, curvePeak ? 1 : settings.holdSize, settings.holdShow == ShowAs::CurveFill);
     }
     if (! peakFirst) drawPeak();
     if (settings.avgOn)
     {
         if (settings.avgShow == ShowAs::Bars) drawBars (model->avg, cAvg, false, settings.avgSize);
-        else drawCurve (g, model->avg, n, plot, cAvg, settings.avgSize, settings.avgShow == ShowAs::CurveFill);
-    }
-
-
-    // legend: which colour is which (only the traces that are on)
-    {
-        struct Item { const char* name; Colour c; bool bar; };
-        Item items[3]; int count = 0;
-        if (settings.peakOn) items[count++] = { "PEAK", cPeak, true };
-        if (settings.holdOn) items[count++] = { "HOLD", cHold, false };
-        if (settings.avgOn)  items[count++] = { "AVERAGE", cAvg, false };
-        float x = plot.getX() + 10.0f;
-        const float y = plot.getY() + 8.0f;
-        if (settings.frozen) x += 62.0f;
-        g.setFont (uiFont (9.5f).withExtraKerningFactor (0.12f));
-        for (int i = 0; i < count; ++i)
-        {
-            g.setColour (items[i].c.withAlpha (1.0f));
-            if (items[i].bar) g.fillRect (x, y + 1.0f, 8.0f, 8.0f);
-            else              g.fillRoundedRectangle (x, y + 4.0f, 12.0f, 2.0f, 1.0f);
-            const float sw = items[i].bar ? 8.0f : 12.0f;
-            g.setColour (colors[ColorScheme::GridLabel]);
-            const float tw = (float) GlyphArrangement::getStringWidthInt (g.getCurrentFont(), items[i].name);
-            g.drawText (items[i].name, Rectangle<float> (x + sw + 5.0f, y - 1.0f, tw + 4.0f, 12.0f), Justification::centredLeft, false);
-            x += sw + 5.0f + tw + 14.0f;
-        }
+        else drawCurve (g, model->avg, n, plot, cAvg, curvePeak ? 1 : settings.avgSize, settings.avgShow == ShowAs::CurveFill);
     }
 
     // pointer read-out: frequency of the band under the cursor and its levels
@@ -245,7 +270,7 @@ void SpectrumView::paint (Graphics& g)
             if (settings.avgOn)  top = juce::jmax (top, model->avg[b]);
             return top < -1e8 ? plot.getBottom() + 10.0f : levelToY (juce::jlimit (-400.0, 400.0, top), plot);
         };
-        const auto legendArea = Rectangle<float> (plot.getX(), plot.getY(), 260.0f, 22.0f);
+        const auto legendArea = Rectangle<float> (plot.getX(), plot.getY(), 0.0f, 0.0f);
         auto r = placeReadout (mouse, w, h, plot, traceTop, legendArea);
         g.setColour (Colour (0xF00C0E14));
         g.fillRoundedRectangle (r, 5.0f);
@@ -259,21 +284,7 @@ void SpectrumView::paint (Graphics& g)
         }
     }
 
-    // scale label: what the dB axis means with the current tilt
-    {
-        const String sl = "dB  slope " + String (settings.slope, settings.slope == std::floor (settings.slope) ? 0 : 1)
-                          + " dB/oct @ 1 kHz" + (settings.slope == 3.0 ? "  (true level)" : "");
-        g.setFont (uiFont (9.5f));
-        g.setColour (colors[ColorScheme::GridLabel]);
-        g.drawText (sl, Rectangle<float> (plot.getRight() - 210.0f, plot.getY() + 6.0f, 202.0f, 12.0f), Justification::centredRight, false);
-    }
 
-    if (settings.frozen)
-    {
-        g.setColour (palette::red);
-        g.setFont (uiFont (10.5f, true));
-        g.drawText ("FROZEN", Rectangle<float> (plot.getX() + 8, plot.getY() + 6, 80, 14), Justification::centredLeft, false);
-    }
 }
 
 } // namespace malon

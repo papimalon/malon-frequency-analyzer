@@ -53,7 +53,7 @@ public:
         g.setColour (palette::dim);
         const bool plain = juce::String (spec.unit) == "dBFS";
         if (! plain) g.setFont (uiFont (8.5f, true));
-        g.drawText (plain ? juce::String ("OUT") : juce::String (spec.unit), b.withHeight (14.0f).withTrimmedLeft (4.0f), Justification::centredLeft, false);
+        g.drawText (plain ? juce::String ("OUT") : juce::String (spec.unit), b.withHeight (14.0f).withTrimmedLeft (4.0f).withTrimmedRight (18.0f), Justification::centredLeft, false);
         auto led = ledArea();
         g.setColour (clip ? palette::red : palette::red.withAlpha (0.18f));
         g.fillEllipse (led);
@@ -67,10 +67,11 @@ public:
             const float y = dbToY ((double) db, bars);
             g.setColour (Colours::white.withAlpha (db == 0 ? 0.25f : 0.08f));
             g.drawHorizontalLine ((int) y, bars.getX(), bars.getRight());
-            if (db % (2 * tk) == 0)
+            if (db % (2 * tk) == 0 || db == topI)
             {
                 g.setColour (palette::dim);
-                g.drawText (String (db), Rectangle<float> (0, y - 6, bars.getX() - 2, 12), Justification::centredRight, false);
+                const float ly = juce::jlimit (bars.getY() - 6.0f, bars.getBottom() - 6.0f, y - 6.0f);   // never clipped at the top
+                g.drawText ((db > 0 ? "+" : "") + String (db), Rectangle<float> (0, ly, bars.getX() - 2, 12), Justification::centredRight, false);
             }
         }
         for (int c = 0; c < 2; ++c)
@@ -99,7 +100,9 @@ public:
         const double hmax = std::max (hold[0], nch > 1 ? hold[1] : hold[0]);
         g.setColour (hmax >= spec.redAt ? palette::red : palette::text);
         g.setFont (uiFont (9.0f, true));
-        g.drawText (hmax <= -150.0 ? String ("-inf") : String (hmax, 1), b.removeFromBottom (13.0f), Justification::centred, false);
+        // labelled: the held peak (or loudness max on LUFS/LU scales), in the scale's units
+        const String what = spec.loudness ? "MAX " : "PK ";
+        g.drawText (what + (hmax <= -150.0 ? String ("-inf") : String (hmax, 1)), b.removeFromBottom (15.0f).withTrimmedBottom (2.0f), Justification::centred, false);
     }
 
 private:
@@ -107,7 +110,7 @@ private:
     juce::Rectangle<float> barArea() const
     {
         auto b = getLocalBounds().toFloat();
-        return b.withTrimmedTop (20.0f).withTrimmedBottom (27.0f).withTrimmedLeft (22.0f).withTrimmedRight (4.0f);
+        return b.withTrimmedTop (20.0f).withTrimmedBottom (29.0f).withTrimmedLeft (22.0f).withTrimmedRight (4.0f);
     }
     float dbToY (double db, juce::Rectangle<float> r) const
     {
@@ -141,6 +144,7 @@ public:
     /** balance in dB (R minus L), NaN = unknown */
     void setBalance (double db) { bal = db; }
     void setCompact (bool c) { compact = c; }
+    bool isCompactMode() const { return compact; }
     double getMin() const { return mn; }
     double getMax() const { return mx; }
 
@@ -200,7 +204,7 @@ public:
         if (compact) return;
         // scale
         auto sc = b.removeFromTop (14.0f);
-        g.setFont (uiFont (8.5f)); g.setColour (palette::dim);
+        g.setFont (uiFont (9.5f)); g.setColour (palette::dim);
         const double ticks[5] = { -1.0, -0.5, 0.0, 0.5, 1.0 };
         const char* lab[5] = { "-1.00", "-0.50", "0.00", "0.50", "1.00" };
         for (int i = 0; i < 5; ++i)
@@ -216,7 +220,7 @@ public:
         // balance
         b.removeFromTop (4.0f);
         auto br = b.removeFromTop (14.0f);
-        g.setFont (uiFont (9.0f).withExtraKerningFactor (0.14f));
+        g.setFont (uiFont (10.0f).withExtraKerningFactor (0.14f));
         g.setColour (palette::dim.withAlpha (0.8f));
         g.drawText ("BAL", br, Justification::centredLeft, false);
         String bt = "--";

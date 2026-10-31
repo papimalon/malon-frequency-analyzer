@@ -511,7 +511,7 @@ static void screenshots (const File& dir)
     p.setColors (builtInSchemes()[0].scheme);
 
     // 6. tiny and big
-    ed->setSize (520, 340); runAudio (p, *ed, syn, 0.5);
+    ed->setSize (680, 380); runAudio (p, *ed, syn, 0.5);
     CHECK (save (*ed, dir.getChildFile ("08-small.png")));
     ed->setSize (1600, 800); runAudio (p, *ed, syn, 0.5);
     CHECK (save (*ed, dir.getChildFile ("09-large.png")));
@@ -566,12 +566,13 @@ static void screenshots (const File& dir)
         setParam (p, ids::specMode, 0); p.syncModeNow();
         setParam (p, ids::specMode, 1); p.syncModeNow();
         CHECK (ed->getModeBox().isVisible());
-        ed->getHiResButton().setToggleState (true, sendNotification);   // like a click
-        CHECK_MSG (roundToInt (getParam (p, ids::specMode)) == 3 && roundToInt (getParam (p, ids::bands)) == kBandsHiResIndex, "HI-RES -> mode %d", roundToInt (getParam (p, ids::specMode)));
+        setParam (p, ids::specMode, 3); p.syncModeNow();               // View: High Res (replaces the HI-RES button)
+        CHECK (! ed->getHiResButton().isVisible());
+        CHECK_MSG (roundToInt (getParam (p, ids::specMode)) == 3 && roundToInt (getParam (p, ids::bands)) == kBandsHiResIndex, "View High Res -> mode %d", roundToInt (getParam (p, ids::specMode)));
         runAudio (p, *ed, syn, 8.5);   // (lands outside the synth's drum breakdown)
         CHECK (ed->getModel().numBands > 400);
         CHECK (save (*ed, dir.getChildFile ("v12-1-hires-48.png")));
-        ed->getHiResButton().setToggleState (false, sendNotification);
+        setParam (p, ids::specMode, 1); p.syncModeNow();
         CHECK (roundToInt (getParam (p, ids::specMode)) == 1 && roundToInt (getParam (p, ids::bands)) == kBandsDefaultIndex);
         const char* shots[] = { nullptr, nullptr, "v12-2-mode-slower.png", nullptr, nullptr, "v12-3-mode-master.png", "v12-4-mode-average.png", "v12-5-mode-avgmax.png" };
         for (int m : { 2, 5, 6, 7 })
@@ -591,7 +592,10 @@ static void screenshots (const File& dir)
         ed->setSize (1060, 640); ed->setSettingsOpen (true); runAudio (p, *ed, syn, 0.5);
         CHECK (save (*ed, dir.getChildFile ("v12-9-settings.png")));
         ed->setSettingsOpen (false);
-        ed->setSize (520, 340); runAudio (p, *ed, syn, 0.5);
+        ed->setSize (680, 380); runAudio (p, *ed, syn, 0.5);
+        // smallest window: View, Slope and the full correlation meter must still be there, nothing overlapping
+        CHECK (ed->getModeBox().isVisible() && ! ed->getCorrelationBar().isCompactMode());
+        CHECK (ed->getModeBox().getX() > 0);
         CHECK (save (*ed, dir.getChildFile ("v12-10-small.png")));
         ed->setSize (780, 480);
     }

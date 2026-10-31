@@ -116,7 +116,6 @@ ComboBox* SettingsContent::addCombo (const char* id, const String& label)
 SettingsContent::SettingsContent (MalonProcessor& p) : proc (p)
 {
     addHeader ("Input");
-    addCombo (ids::specMode, "Mode");
     addCombo (ids::channel, "Channel");
 
     addHeader ("Peak");
@@ -142,7 +141,7 @@ SettingsContent::SettingsContent (MalonProcessor& p) : proc (p)
     addHeader ("Level");
     addCombo (ids::slope, "Slope");
     addSlider (ids::ceiling, "Ceiling", "dB");
-    addSlider (ids::range, "Range", "dB");
+    addCombo (ids::dbFloor, "Floor");
     addSlider (ids::grid, "Grid", "dB");
 
     addHeader ("Metering");

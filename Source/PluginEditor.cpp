@@ -73,8 +73,10 @@ MalonEditor::MalonEditor (MalonProcessor& p)
     addChildComponent (viewport);
 
     freezeButton.setClickingTogglesState (true);
+    freezeButton.getProperties().set ("neutral", true);   // one-shot style; FROZEN shows on the graph
     freezeButton.onClick = [this] { setFrozen (freezeButton.getToggleState()); };
     resetButton.onClick = [this] { resetAll(); };
+    aboutButton.getProperties().set ("neutral", true);
     settingsButton.setClickingTogglesState (true);
     settingsButton.onClick = [this] { setSettingsOpen (settingsButton.getToggleState()); };
     aboutButton.onClick = [this] { showAbout (true); };
@@ -90,7 +92,7 @@ MalonEditor::MalonEditor (MalonProcessor& p)
     {
         auto& b = modeButtons[i];
         b.setTooltip (modeTips[i]);
-        b.setConnectedEdges ((i > 0 ? Button::ConnectedOnLeft : 0) | (i < 3 ? Button::ConnectedOnRight : 0));
+        b.getProperties().set ("neutral", true);     // tabs: selected = neutral highlight, not the accent
         b.onClick = [this, i]
         {
             if (auto* prm = proc.apvts.getParameter (ids::viewMode))
@@ -111,7 +113,8 @@ MalonEditor::MalonEditor (MalonProcessor& p)
         else setParam (proc.apvts, ids::bands, (float) (on ? kBandsHiResIndex : kBandsDefaultIndex));
         proc.syncModeNow();
     };
-    addAndMakeVisible (hiResButton);
+    // HI-RES lives in the View menu now (View: High Res); the button is kept only for old tests/hosts, hidden
+    addChildComponent (hiResButton);
     for (auto* b : { &holdButton, &avgButton }) { b->setClickingTogglesState (true); addAndMakeVisible (*b); }
     holdButton.setTooltip ("Show / hide the white peak-hold line");
     avgButton.setTooltip ("Show / hide the red average line");
@@ -120,8 +123,8 @@ MalonEditor::MalonEditor (MalonProcessor& p)
     slopeBox.addItemList ({ "Slope 0", "Slope 3", "Slope 4.5" }, 1);
     slopeBox.setTooltip ("Spectrum slope in dB/octave around 1 kHz, same scale as SPAN. 4.5 (SPAN default): a balanced mix looks flat. 3: pink noise flat, tones read their true level at any frequency. 0: SPAN raw view");
     addAndMakeVisible (slopeBox);
-    for (int i = 0; i < 8; ++i) specModeBox.addItem (i == 0 ? String ("Mode: Off") : String ("Mode: ") + kModeNames[i], i + 1);
-    specModeBox.setTooltip ("Spectrum Mode, like SPAN: Default, Slower (calmer), High Res (48 bands/oct curve), 96 kHz, Master (slow tonal balance), Average (long-term only), Avg+Max (average + all-time max). Changing a setting by hand switches to Off (custom)");
+    for (int i = 0; i < 8; ++i) specModeBox.addItem (String ("View: ") + kModeNames[i], i + 1);
+    specModeBox.setTooltip ("Spectrum view preset, like SPAN's Mode: Default, Slower (calmer), High Res (48 bands/oct curve, sharp low end), 96 kHz, Master (slow tonal balance), Average (long-term only), Avg+Max (average + all-time max). Changing a setting by hand switches to Custom");
     addAndMakeVisible (specModeBox);
     specModeAtt = std::make_unique<ComboBoxParameterAttachment> (*proc.apvts.getParameter (ids::specMode), specModeBox);
     slopeAtt = std::make_unique<ComboBoxParameterAttachment> (*proc.apvts.getParameter (ids::slope), slopeBox);
@@ -139,7 +142,7 @@ MalonEditor::MalonEditor (MalonProcessor& p)
     about.onClose = [this] { showAbout (false); };
 
     setWantsKeyboardFocus (true);
-    constrainer.setMinimumSize (520, 340);
+    constrainer.setMinimumSize (680, 380);   // smallest size where View, Slope and correlation/balance all fit
     constrainer.setMaximumSize (4096, 2400);
     setConstrainer (&constrainer);
     setResizable (true, true);
@@ -151,7 +154,7 @@ MalonEditor::MalonEditor (MalonProcessor& p)
     sendLookAndFeelChange();      // controls built before they had a parent picked up the default look
 
     auto sz = proc.getSavedEditorSize();
-    setSize (sz.x, sz.y);
+    setSize (jmax (680, sz.x), jmax (380, sz.y));   // older sessions may have saved a smaller window
 
     proc.addChangeListener (this);
     applyAllSettings();
@@ -208,15 +211,15 @@ void MalonEditor::resized()
     {   // view selector, aligned with the plot's left edge
         auto row = r.removeFromTop (28).withTrimmedLeft (8 + 36).withTrimmedBottom (4);
         const int widths[4] = { 82, 56, 52, 56 };
-        for (int i = 0; i < 4; ++i) modeButtons[i].setBounds (row.removeFromLeft (widths[i]));
-        hiResButton.setBounds (row.removeFromRight (64 + 8).withTrimmedRight (8));
+        for (int i = 0; i < 4; ++i) { modeButtons[i].setBounds (row.removeFromLeft (widths[i])); row.removeFromLeft (4); }
+        row.removeFromRight (8);
         avgButton.setBounds (row.removeFromRight (46 + 4).withTrimmedRight (4));
         holdButton.setBounds (row.removeFromRight (52 + 4).withTrimmedRight (4));
         const bool spectrum = viewMode <= 0;
         slopeBox.setVisible (spectrum && row.getWidth() >= 100);
         slopeBox.setBounds (row.removeFromRight (92 + 6).withTrimmedRight (6));
         specModeBox.setVisible (spectrum && row.getWidth() >= 140);
-        specModeBox.setBounds (row.removeFromRight (132 + 6).withTrimmedRight (6));
+        specModeBox.setBounds (row.removeFromRight (140 + 6).withTrimmedRight (6));
     }
 
     if (settingsOpen)
@@ -310,7 +313,8 @@ void MalonEditor::applyAllSettings()
     s.holdShow = (ShowAs) (int) v (ids::holdShow);  s.avgShow = (ShowAs) (int) v (ids::avgShow);
     s.peakShow = (ShowAs) (int) v (ids::peakShow);
     s.holdSize = (int) v (ids::holdSize);  s.avgSize = (int) v (ids::avgSize);
-    s.ceiling = v (ids::ceiling);  s.range = v (ids::range);  s.grid = v (ids::grid);
+    s.ceiling = v (ids::ceiling);  s.grid = v (ids::grid);
+    s.range = jmax (10.0, s.ceiling - kFloors[jlimit (0, 2, (int) v (ids::dbFloor))]);
     s.octaveGrid = (int) v (ids::freqGrid) == 1;
     s.frozen = model.frozen;
     s.slope = kSlopes[jlimit (0, 2, (int) v (ids::slope))];
@@ -385,7 +389,7 @@ void MalonEditor::updateViewMode()
     history.setVisible (m != 0);
     if (m != 0) history.setMode (m - 1);
     channelBox.setEnabled (m == 0);
-    hiResButton.setVisible (m == 0);
+    hiResButton.setVisible (false);
     holdButton.setVisible (m == 0); avgButton.setVisible (m == 0);
     resized();
 }

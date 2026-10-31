@@ -33,6 +33,7 @@ namespace ids
     inline constexpr const char* specMode     = "specMode";
     inline constexpr const char* peakShow     = "peakShow";
     inline constexpr const char* meterScale   = "meterScale";
+    inline constexpr const char* dbFloor      = "dbFloor";
 }
 
 /** RMS window choices (ms), index = value of the "rmsWindow" parameter. */
@@ -47,8 +48,10 @@ inline constexpr int kBandsHiResIndex = 5;
 inline constexpr int kBandsDefaultIndex = 2;
 
 /** SPAN-style spectrum Modes (index = value of "specMode"). 0 = Off: nothing is applied, own settings. */
-inline constexpr const char* kModeNames[8] = { "Off (custom)", "Default", "Slower", "High Res", "96 kHz", "Master", "Average", "Avg+Max" };
+inline constexpr const char* kModeNames[8] = { "Custom", "Default", "Slower", "High Res", "96 kHz", "Master", "Average", "Avg+Max" };
 inline constexpr int kModeDefault = 1;
+/** Spectrum floor choices (dB), index = value of "dbFloor". -72 like SPAN. */
+inline constexpr double kFloors[3] = { -60.0, -72.0, -90.0 };
 
 enum class ShowAs { Bars = 0, Curve = 1, CurveFill = 2 };
 

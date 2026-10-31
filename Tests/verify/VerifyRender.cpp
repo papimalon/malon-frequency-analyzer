@@ -32,7 +32,7 @@ int main (int argc, char** argv)
     // power-domain average per band (what v1.0 drew) for the root-cause comparison
     std::vector<double> powSum (kMaxBands, 0.0); double powN = 0.0;
     // time-means (after 3 s) of the drawn bar, the new average line and the v1.0 power average, slope 0
-    std::vector<double> mBar (kMaxBands, 0.0), mAvg (kMaxBands, 0.0), mOld (kMaxBands, 0.0); double mN = 0.0;
+    std::vector<double> mSig (kMaxBands, 0.0), mBar (kMaxBands, 0.0), mAvg (kMaxBands, 0.0), mOld (kMaxBands, 0.0); double mN = 0.0;
     std::vector<double> oldEma (kMaxBands, 0.0);
     DisplayModel holdM; DisplaySettings holdS; holdS.slope = 3.0; holdS.holdInfinite = true;   // 3 = true band level
     double corrMin = 1.0, corrMax = -1.0, corrLast = 0.0; bool corrValid = false;
@@ -59,7 +59,7 @@ int main (int argc, char** argv)
                 {
                     for (int i = 0; i < r.numBands; ++i)
                     {
-                        mBar[i] += dm[0].peak[i]; mAvg[i] += dm[0].avg[i];
+                        mBar[i] += dm[0].peak[i]; mSig[i] += dm[0].sigma[i]; mAvg[i] += dm[0].avg[i];
                         mOld[i] += 3.0 + 10.0 * std::log10 (powSum[i] / powN + 1e-30);
                     }
                     mN += 1;
@@ -103,6 +103,6 @@ int main (int argc, char** argv)
     for (int i = 0; i < nb; ++i) std::printf ("%s%.2f", i ? "," : "", holdM.hold[i]);
     auto pr = [&] (const char* k, std::vector<double>& v)
     { std::printf ("],\"%s\":[", k); for (int i = 0; i < nb; ++i) std::printf ("%s%.2f", i ? "," : "", mN > 0 ? v[i] / mN : -200.0); };
-    pr ("meanBar", mBar); pr ("meanAvg", mAvg); pr ("meanOld", mOld);
+    pr ("meanBar", mBar); pr ("meanSigma", mSig); pr ("meanAvg", mAvg); pr ("meanOld", mOld);
     std::printf ("]}\n");
 }
