@@ -23,6 +23,7 @@ MeterStrip::MeterStrip (MalonProcessor& p)
     resetButton.setTooltip ("Reset held peaks, integrated loudness, loudness range and the clip light");
     resetButton.onClick = [this] { if (onReset) onReset(); };
     addAndMakeVisible (resetButton);
+    addAndMakeVisible (corr);
     setOpaque (false);
 }
 
@@ -34,6 +35,13 @@ MeterStrip::Layout MeterStrip::layout() const
     l.ctl = r.removeFromRight (narrow ? 80 : 96);
     const int gap = narrow ? 16 : 22;
     r.removeFromRight (gap);
+    if (getWidth() >= 600)
+    {
+        l.corr = r.removeFromRight (narrow ? 140 : 190);
+        r.removeFromRight (gap);
+    }
+    else    // too small for the full meter: compact version under the Reset button
+        l.corr = Rectangle<int> (l.ctl.getX(), l.ctl.getY() + 56, l.ctl.getWidth(), l.ctl.getHeight() - 56);
     const int w = r.getWidth() - 2 * gap;
     const int wTp = jmax (100, (int) (w * 0.25f)), wRms = jmax (118, (int) (w * 0.27f));
     l.tp   = r.removeFromLeft (wTp);   r.removeFromLeft (gap);
@@ -48,11 +56,20 @@ void MeterStrip::resized()
     rmsBox.setBounds (l.rms.getRight() - 84, l.rms.getY() - 3, 84, 20);
     resetButton.setBounds (l.ctl.getX(), l.ctl.getY() + 24, l.ctl.getWidth(), 26);
     ledArea = Rectangle<int> (l.ctl.getX(), l.ctl.getY(), l.ctl.getWidth(), 18);
+    corr.setCompact (getWidth() < 600);
+    corr.setBounds (l.corr.withHeight (jmin (l.corr.getHeight(), CorrelationBar::preferredHeight)));
 }
 
-void MeterStrip::setReadout (const LevelMeter::Readout& r, double liveL, double liveR)
+void MeterStrip::setReadout (const LevelMeter::Readout& r, double liveL, double liveR, double dtMs, bool updateCorr)
 {
     ro = r; live[0] = liveL; live[1] = liveR;
+    if (updateCorr)
+    {
+        const bool stereo = r.channels > 1;
+        corr.setValue (stereo && r.correlationValid, r.correlation, dtMs);
+        const bool balOk = stereo && std::isfinite (r.rmsFastDb[0]) && std::isfinite (r.rmsFastDb[1]) && r.rmsFastDb[0] > -120.0 && r.rmsFastDb[1] > -120.0;
+        corr.setBalance (balOk ? r.rmsFastDb[1] - r.rmsFastDb[0] : std::numeric_limits<double>::quiet_NaN());
+    }
     repaint();
 }
 
@@ -91,7 +108,9 @@ void MeterStrip::paint (Graphics& g)
         g.drawText (txt, col.getX(), col.getY() + 16, col.getWidth(), 32, Justification::centredLeft, false);
         g.setColour (dim);
         g.setFont (uiFont (10.5f).withExtraKerningFactor (0.08f));
-        g.drawText (unit, col.getX() + (int) textWidth (f, txt) + 6, col.getY() + 16, 150, 32, Justification::centredLeft, false);
+        const int ux = col.getX() + (int) textWidth (f, txt) + 6;
+        if (col.getRight() - ux > 16)
+            g.drawFittedText (unit, ux, col.getY() + 16, col.getRight() - ux, 32, Justification::centredLeft, 1, 0.8f);
     };
     auto small = [&] (Rectangle<int> area, const String& text, Colour c = dim)
     {
@@ -158,33 +177,6 @@ void MeterStrip::paint (Graphics& g)
             g.setColour (text);
             g.setFont (uiFont (13.0f, true));
             g.drawText (cells[i].value, c, Justification::centredLeft, false);
-        }
-    }
-
-    // ---- stereo correlation (under the reset button) ----
-    {
-        auto c = Rectangle<int> (l.ctl.getX(), l.ctl.getY() + 58, l.ctl.getWidth(), 14);
-        g.setColour (dim);
-        g.setFont (uiFont (9.0f).withExtraKerningFactor (0.14f));
-        g.drawText ("CORR", c, Justification::centredLeft, false);
-        const bool ok = ro.correlationValid && stereo;
-        const double v = ok ? ro.correlation : 0.0;
-        g.setColour (ok ? (v < 0.0 ? red : text) : dim);
-        g.setFont (uiFont (12.0f, true));
-        g.drawText (ok ? (v >= 0.0 ? "+" : "") + String (v, 2) : String ("--"), c, Justification::centredRight, false);
-        auto bar = Rectangle<float> ((float) c.getX(), (float) c.getBottom() + 5.0f, (float) c.getWidth(), 3.0f);
-        auto toX = [&] (double x) { return bar.getX() + bar.getWidth() * (float) ((jlimit (-1.0, 1.0, x) + 1.0) * 0.5); };
-        g.setColour (Colour (0xFF1B1F2A));
-        g.fillRoundedRectangle (bar, 1.5f);
-        g.setColour (text.withAlpha (0.35f));
-        g.fillRect (toX (0.0), bar.getY() - 2.0f, 1.0f, bar.getHeight() + 4.0f);
-        if (ok)
-        {
-            const float xv = toX (v), xc = toX (0.0);
-            g.setColour (v < 0.0 ? red : blue);
-            g.fillRoundedRectangle (Rectangle<float> (jmin (xv, xc), bar.getY(), jmax (2.0f, std::abs (xv - xc)), bar.getHeight()), 1.5f);
-            g.setColour (text);
-            g.fillRect (xv - 1.0f, bar.getY() - 2.0f, 2.0f, bar.getHeight() + 4.0f);
         }
     }
 

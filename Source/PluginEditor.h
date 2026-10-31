@@ -79,10 +79,9 @@ private:
     juce::ComboBox slopeBox;
     std::unique_ptr<juce::ComboBoxParameterAttachment> slopeAtt;
     OutMeter outMeter;
-    CorrelationBar corrBar;
 public:
     OutMeter& getOutMeter() noexcept { return outMeter; }
-    CorrelationBar& getCorrelationBar() noexcept { return corrBar; }
+    CorrelationBar& getCorrelationBar() noexcept { return strip.getCorrelation(); }
 private:
     void updateHiResButton();
     void updateViewMode();

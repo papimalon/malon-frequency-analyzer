@@ -119,7 +119,6 @@ MalonEditor::MalonEditor (MalonProcessor& p)
     addAndMakeVisible (slopeBox);
     slopeAtt = std::make_unique<ComboBoxParameterAttachment> (*proc.apvts.getParameter (ids::slope), slopeBox);
     addAndMakeVisible (outMeter);
-    addAndMakeVisible (corrBar);
     outMeter.onClipClicked = [this] { resetMeters(); };
     channelBox.addItemList ({ "Left", "Right", "Stereo", "Mix", "Mid", "Side" }, 1);
     channelBox.setTooltip ("What the spectrum shows: Left, Right, both (Stereo), L+R Mix, Mid (centre) or Side (stereo width)");
@@ -223,7 +222,6 @@ void MalonEditor::resized()
         auto g = r.withTrimmedLeft (8).withTrimmedBottom (8).withTrimmedRight (8);
         outMeter.setBounds (g.removeFromRight (OutMeter::preferredWidth));
         g.removeFromRight (4);
-        corrBar.setBounds (g.removeFromBottom (CorrelationBar::preferredHeight).withTrimmedLeft (36).withTrimmedRight (36));
         view.setBounds (g);
     }
     history.setBounds (view.getBounds());
@@ -338,11 +336,10 @@ void MalonEditor::pollNow (double dtMs)
         {
             const double off[2] = { -200.0, -200.0 };
             outMeter.setLevels (meterOn ? liveDb : off, meterOn ? ro.rmsFastDb : off, ro.channels, meterOn && ro.clipped, dtMs);
-            corrBar.setValue (meterOn && ro.correlationValid, ro.correlation, dtMs);
         }
         if (strip.isVisible())
         {
-            strip.setReadout (ro, liveDb[0], liveDb[1]);
+            strip.setReadout (ro, liveDb[0], liveDb[1], dtMs, meterOn && ! model.frozen);
             const double pkMax = jmax (pk[0], pk[1]);
             const double pkDb = pkMax > 0.0 ? 20.0 * std::log10 (pkMax) : -std::numeric_limits<double>::infinity();
             if (! model.frozen) history.push (ro.momentary, ro.rmsFastCombinedDb, pkDb < -150.0 ? -std::numeric_limits<double>::infinity() : pkDb);

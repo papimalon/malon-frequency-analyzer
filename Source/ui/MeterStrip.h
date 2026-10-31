@@ -4,6 +4,7 @@
 #include <memory>
 #include "../PluginProcessor.h"
 #include "MalonLookAndFeel.h"
+#include "OutMeter.h"
 
 namespace malon
 {
@@ -18,7 +19,8 @@ public:
     explicit MeterStrip (MalonProcessor&);
 
     /** liveL/liveR: decaying live true peak in dBTP (for the thin bar). */
-    void setReadout (const LevelMeter::Readout& r, double liveL, double liveR);
+    void setReadout (const LevelMeter::Readout& r, double liveL, double liveR, double dtMs = 33.0, bool updateCorr = true);
+    CorrelationBar& getCorrelation() noexcept { return corr; }
 
     std::function<void()> onReset;
 
@@ -30,7 +32,7 @@ public:
     static juce::String fmt (double db, int decimals = 1);
 
 private:
-    struct Layout { juce::Rectangle<int> tp, rms, loud, ctl; };
+    struct Layout { juce::Rectangle<int> tp, rms, loud, corr, ctl; };
     Layout layout() const;
 
     LevelMeter::Readout ro;
@@ -40,6 +42,7 @@ private:
     juce::TextButton resetButton { "Reset" };
     std::unique_ptr<juce::ComboBoxParameterAttachment> rmsAtt;
     juce::Rectangle<int> ledArea;
+    CorrelationBar corr;
 };
 
 } // namespace malon
